@@ -6,7 +6,11 @@ defmodule Indexer.Transform.TokenTransfers do
   require Logger
 
   alias ABI.TypeDecoder
-  alias Explorer.Chain.TokenTransfer
+  alias Explorer.{Chain, Repo}
+  alias Explorer.Chain.{Token, TokenTransfer}
+  alias Explorer.Token.MetadataRetriever
+
+  @burn_address "0x0000000000000000000000000000000000000000"
 
   @doc """
   Returns a list of token transfers given a list of logs.
@@ -14,21 +18,116 @@ defmodule Indexer.Transform.TokenTransfers do
   def parse(logs) do
     initial_acc = %{tokens: [], token_transfers: []}
 
-    logs
-    |> Enum.filter(&(&1.first_topic == unquote(TokenTransfer.constant())))
-    |> Enum.reduce(initial_acc, &do_parse/2)
+    erc20_and_erc721_token_transfers =
+      logs
+      |> Enum.filter(&(&1.first_topic == unquote(TokenTransfer.constant())))
+      |> Enum.reduce(initial_acc, &do_parse/2)
+
+    erc1155_token_transfers =
+      logs
+      |> Enum.filter(fn log ->
+        log.first_topic == TokenTransfer.erc1155_single_transfer_signature() ||
+          log.first_topic == TokenTransfer.erc1155_batch_transfer_signature()
+      end)
+      |> Enum.reduce(initial_acc, &do_parse(&1, &2, :erc1155))
+
+    rough_tokens = erc1155_token_transfers.tokens ++ erc20_and_erc721_token_transfers.tokens
+    rough_token_transfers = erc1155_token_transfers.token_transfers ++ erc20_and_erc721_token_transfers.token_transfers
+
+    {tokens, token_transfers} = sanitize_token_types(rough_tokens, rough_token_transfers)
+
+    token_transfers
+    |> Enum.filter(fn token_transfer ->
+      token_transfer.to_address_hash == @burn_address || token_transfer.from_address_hash == @burn_address
+    end)
+    |> Enum.map(fn token_transfer ->
+      token_transfer.token_contract_address_hash
+    end)
+    |> Enum.uniq()
+    |> Enum.each(&update_token/1)
+
+    tokens_uniq = tokens |> Enum.uniq()
+
+    token_transfers_from_logs_uniq = %{
+      tokens: tokens_uniq,
+      token_transfers: token_transfers
+    }
+
+    token_transfers_from_logs_uniq
   end
 
-  defp do_parse(log, %{tokens: tokens, token_transfers: token_transfers} = acc) do
-    {token, token_transfer} = parse_params(log)
+  defp sanitize_token_types(tokens, token_transfers) do
+    existing_token_types_map =
+      tokens
+      |> Enum.reduce([], fn %{contract_address_hash: address_hash}, acc ->
+        case Repo.get_by(Token, contract_address_hash: address_hash) do
+          %{type: type} -> [{address_hash, type} | acc]
+          _ -> acc
+        end
+      end)
+      |> Map.new()
+
+    existing_tokens =
+      existing_token_types_map
+      |> Map.keys()
+      |> Enum.map(&to_string/1)
+
+    new_tokens_token_transfers = Enum.filter(token_transfers, &(&1.token_contract_address_hash not in existing_tokens))
+
+    new_token_types_map =
+      new_tokens_token_transfers
+      |> Enum.group_by(& &1.token_contract_address_hash)
+      |> Enum.map(fn {contract_address_hash, transfers} ->
+        {contract_address_hash, define_token_type(transfers)}
+      end)
+      |> Map.new()
+
+    actual_token_types_map = Map.merge(new_token_types_map, existing_token_types_map)
+
+    actual_tokens =
+      Enum.map(tokens, fn %{contract_address_hash: hash} = token ->
+        Map.put(token, :type, actual_token_types_map[hash])
+      end)
+
+    actual_token_transfers =
+      Enum.map(token_transfers, fn %{token_contract_address_hash: hash} = tt ->
+        Map.put(tt, :token_type, actual_token_types_map[hash])
+      end)
+
+    {actual_tokens, actual_token_transfers}
+  end
+
+  defp define_token_type(token_transfers) do
+    Enum.reduce(token_transfers, nil, fn %{token_type: token_type}, acc ->
+      if token_type_priority(token_type) > token_type_priority(acc), do: token_type, else: acc
+    end)
+  end
+
+  defp token_type_priority(nil), do: -1
+
+  @token_types_priority_order ["ERC-20", "ERC-721", "ERC-1155"]
+  defp token_type_priority(token_type) do
+    Enum.find_index(@token_types_priority_order, &(&1 == token_type))
+  end
+
+  defp do_parse(log, %{tokens: tokens, token_transfers: token_transfers} = acc, type \\ :erc20_erc721) do
+    {token, token_transfer} =
+      if type != :erc1155 do
+        parse_params(log)
+      else
+        parse_erc1155_params(log)
+      end
 
     %{
       tokens: [token | tokens],
       token_transfers: [token_transfer | token_transfers]
     }
   rescue
-    _ in [FunctionClauseError, MatchError] ->
-      Logger.error(fn -> "Unknown token transfer format: #{inspect(log)}" end)
+    e in [FunctionClauseError, MatchError] ->
+      Logger.error(fn ->
+        ["Unknown token transfer format: #{inspect(log)}", Exception.format(:error, e, __STACKTRACE__)]
+      end)
+
       acc
   end
 
@@ -46,6 +145,7 @@ defmodule Indexer.Transform.TokenTransfers do
       to_address_hash: truncate_address_hash(log.third_topic),
       token_contract_address_hash: log.address_hash,
       transaction_hash: log.transaction_hash,
+      token_ids: nil,
       token_type: "ERC-20"
     }
 
@@ -69,7 +169,7 @@ defmodule Indexer.Transform.TokenTransfers do
       from_address_hash: truncate_address_hash(log.second_topic),
       to_address_hash: truncate_address_hash(log.third_topic),
       token_contract_address_hash: log.address_hash,
-      token_id: token_id || 0,
+      token_ids: [token_id || 0],
       transaction_hash: log.transaction_hash,
       token_type: "ERC-721"
     }
@@ -83,7 +183,14 @@ defmodule Indexer.Transform.TokenTransfers do
   end
 
   # ERC-721 token transfer with info in data field instead of in log topics
-  defp parse_params(%{second_topic: nil, third_topic: nil, fourth_topic: nil, data: data} = log)
+  defp parse_params(
+         %{
+           second_topic: nil,
+           third_topic: nil,
+           fourth_topic: nil,
+           data: data
+         } = log
+       )
        when not is_nil(data) do
     [from_address_hash, to_address_hash, token_id] = decode_data(data, [:address, :address, {:uint, 256}])
 
@@ -94,7 +201,7 @@ defmodule Indexer.Transform.TokenTransfers do
       from_address_hash: encode_address_hash(from_address_hash),
       to_address_hash: encode_address_hash(to_address_hash),
       token_contract_address_hash: log.address_hash,
-      token_id: token_id,
+      token_ids: [token_id],
       transaction_hash: log.transaction_hash,
       token_type: "ERC-721"
     }
@@ -102,6 +209,85 @@ defmodule Indexer.Transform.TokenTransfers do
     token = %{
       contract_address_hash: log.address_hash,
       type: "ERC-721"
+    }
+
+    {token, token_transfer}
+  end
+
+  defp update_token(nil), do: :ok
+
+  defp update_token(address_hash_string) do
+    {:ok, address_hash} = Chain.string_to_address_hash(address_hash_string)
+
+    token = Repo.get_by(Token, contract_address_hash: address_hash)
+
+    if token && !token.skip_metadata do
+      token_params =
+        address_hash_string
+        |> MetadataRetriever.get_total_supply_of()
+
+      token_to_update =
+        token
+        |> Repo.preload([:contract_address])
+
+      if token_params !== %{} do
+        {:ok, _} = Chain.update_token(%{token_to_update | updated_at: DateTime.utc_now()}, token_params)
+      end
+    end
+
+    :ok
+  end
+
+  def parse_erc1155_params(
+        %{
+          first_topic: unquote(TokenTransfer.erc1155_batch_transfer_signature()),
+          third_topic: third_topic,
+          fourth_topic: fourth_topic,
+          data: data
+        } = log
+      ) do
+    [token_ids, values] = decode_data(data, [{:array, {:uint, 256}}, {:array, {:uint, 256}}])
+
+    token_transfer = %{
+      block_number: log.block_number,
+      block_hash: log.block_hash,
+      log_index: log.index,
+      from_address_hash: truncate_address_hash(third_topic),
+      to_address_hash: truncate_address_hash(fourth_topic),
+      token_contract_address_hash: log.address_hash,
+      transaction_hash: log.transaction_hash,
+      token_type: "ERC-1155",
+      token_ids: token_ids,
+      amounts: values
+    }
+
+    token = %{
+      contract_address_hash: log.address_hash,
+      type: "ERC-1155"
+    }
+
+    {token, token_transfer}
+  end
+
+  def parse_erc1155_params(%{third_topic: third_topic, fourth_topic: fourth_topic, data: data} = log) do
+    [token_id, value] = decode_data(data, [{:uint, 256}, {:uint, 256}])
+
+    token_transfer = %{
+      amount: value,
+      block_number: log.block_number,
+      block_hash: log.block_hash,
+      log_index: log.index,
+      from_address_hash: truncate_address_hash(third_topic),
+      to_address_hash: truncate_address_hash(fourth_topic),
+      token_contract_address_hash: log.address_hash,
+      transaction_hash: log.transaction_hash,
+      token_type: "ERC-1155",
+      token_ids: [token_id]
+    }
+
+    token = %{
+      contract_address_hash: log.address_hash,
+      type: "ERC-1155"
     }
 
     {token, token_transfer}

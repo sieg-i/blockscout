@@ -1,7 +1,8 @@
 defmodule BlockScoutWeb.API.RPC.AddressView do
   use BlockScoutWeb, :view
 
-  alias BlockScoutWeb.API.RPC.{EthRPCView, RPCView}
+  alias BlockScoutWeb.API.EthRPC.View, as: EthRPCView
+  alias BlockScoutWeb.API.RPC.RPCView
 
   def render("listaccounts.json", %{accounts: accounts}) do
     accounts = Enum.map(accounts, &prepare_account/1)
@@ -19,6 +20,11 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
   def render("balancemulti.json", %{addresses: addresses}) do
     data = Enum.map(addresses, &render_address/1)
 
+    RPCView.render("show.json", data: data)
+  end
+
+  def render("pendingtxlist.json", %{transactions: transactions}) do
+    data = Enum.map(transactions, &prepare_pending_transaction/1)
     RPCView.render("show.json", data: data)
   end
 
@@ -79,6 +85,22 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
     }
   end
 
+  defp prepare_pending_transaction(transaction) do
+    %{
+      "hash" => "#{transaction.hash}",
+      "nonce" => "#{transaction.nonce}",
+      "from" => "#{transaction.from_address_hash}",
+      "to" => "#{transaction.to_address_hash}",
+      "value" => "#{transaction.value.value}",
+      "gas" => "#{transaction.gas}",
+      "gasPrice" => "#{transaction.gas_price.value}",
+      "input" => "#{transaction.input}",
+      "contractAddress" => "#{transaction.created_contract_address_hash}",
+      "cumulativeGasUsed" => "#{transaction.cumulative_gas_used}",
+      "gasUsed" => "#{transaction.gas_used}"
+    }
+  end
+
   defp prepare_transaction(transaction) do
     %{
       "blockNumber" => "#{transaction.block_number}",
@@ -114,6 +136,7 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
       "index" => to_string(internal_transaction.index),
       "input" => "#{internal_transaction.input}",
       "type" => "#{internal_transaction.type}",
+      "callType" => "#{internal_transaction.call_type}",
       "gas" => "#{internal_transaction.gas}",
       "gasUsed" => "#{internal_transaction.gas_used}",
       "isError" => if(internal_transaction.error, do: "1", else: "0"),
@@ -148,7 +171,20 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
   defp prepare_token_transfer(%{token_type: "ERC-721"} = token_transfer) do
     token_transfer
     |> prepare_common_token_transfer()
-    |> Map.put_new(:tokenID, token_transfer.token_id)
+    |> Map.put_new(:tokenID, List.first(token_transfer.token_ids))
+  end
+
+  defp prepare_token_transfer(%{token_type: "ERC-1155", token_ids: [token_id]} = token_transfer) do
+    token_transfer
+    |> prepare_common_token_transfer()
+    |> Map.put_new(:tokenID, token_id)
+  end
+
+  defp prepare_token_transfer(%{token_type: "ERC-1155"} = token_transfer) do
+    token_transfer
+    |> prepare_common_token_transfer()
+    |> Map.put_new(:tokenIDs, token_transfer.token_ids)
+    |> Map.put_new(:values, token_transfer.amounts)
   end
 
   defp prepare_token_transfer(%{token_type: "ERC-20"} = token_transfer) do
@@ -177,6 +213,7 @@ defmodule BlockScoutWeb.API.RPC.AddressView do
       "symbol" => token.symbol,
       "type" => token.type
     }
+    |> (&if(is_nil(token.id), do: &1, else: Map.put(&1, "id", token.id))).()
   end
 
   defp balance(address) do

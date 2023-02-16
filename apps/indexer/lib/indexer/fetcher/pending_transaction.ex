@@ -6,7 +6,7 @@ defmodule Indexer.Fetcher.PendingTransaction do
   validated version that may make it to the database first.
   """
   use GenServer
-  use Indexer.Fetcher
+  use Indexer.Fetcher, restart: :permanent
 
   require Logger
 
@@ -14,7 +14,7 @@ defmodule Indexer.Fetcher.PendingTransaction do
 
   alias Ecto.Changeset
   alias Explorer.Chain
-  alias Explorer.Chain.Cache.{Accounts}
+  alias Explorer.Chain.Cache.Accounts
   alias Indexer.Fetcher.PendingTransaction
   alias Indexer.Transform.Addresses
 
@@ -133,6 +133,31 @@ defmodule Indexer.Fetcher.PendingTransaction do
 
       {:error, :timeout} ->
         Logger.error("timeout")
+
+        :ok
+
+      {:error, :etimedout} ->
+        Logger.error("timeout")
+
+        :ok
+
+      {:error, :econnrefused} ->
+        Logger.error("connection_refused")
+
+        :ok
+
+      {:error, {:bad_gateway, _}} ->
+        Logger.error("bad_gateway")
+
+        :ok
+
+      {:error, :closed} ->
+        Logger.error("closed")
+
+        :ok
+
+      {:error, reason} ->
+        Logger.error(inspect(reason))
 
         :ok
     end

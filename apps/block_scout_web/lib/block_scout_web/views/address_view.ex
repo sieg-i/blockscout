@@ -3,25 +3,28 @@ defmodule BlockScoutWeb.AddressView do
 
   require Logger
 
-  alias BlockScoutWeb.LayoutView
-  alias Explorer.Chain
+  alias BlockScoutWeb.{AccessHelpers, LayoutView}
+  alias Explorer.Account.CustomABI
+  alias Explorer.{Chain, CustomContractsHelpers, Repo}
   alias Explorer.Chain.{Address, Hash, InternalTransaction, SmartContract, Token, TokenTransfer, Transaction, Wei}
   alias Explorer.Chain.Block.Reward
   alias Explorer.ExchangeRates.Token, as: TokenExchangeRate
-  alias Explorer.SmartContract.Writer
+  alias Explorer.SmartContract.{Helper, Writer}
+
+  import BlockScoutWeb.Account.AuthController, only: [current_user: 1]
 
   @dialyzer :no_match
 
   @tabs [
-    "coin_balances",
+    "coin-balances",
     "contracts",
-    "decompiled_contracts",
-    "internal_transactions",
-    "token_transfers",
-    "read_contract",
-    "read_proxy",
-    "write_contract",
-    "write_proxy",
+    "decompiled-contracts",
+    "internal-transactions",
+    "token-transfers",
+    "read-contract",
+    "read-proxy",
+    "write-contract",
+    "write-proxy",
     "tokens",
     "transactions",
     "validations"
@@ -132,7 +135,7 @@ defmodule BlockScoutWeb.AddressView do
       do: ""
 
   def balance_percentage(%Address{fetched_coin_balance: balance}, total_supply) do
-    if total_supply > 0 do
+    if Decimal.compare(total_supply, 0) == :gt do
       balance
       |> Wei.to(:ether)
       |> Decimal.div(Decimal.new(total_supply))
@@ -176,16 +179,38 @@ defmodule BlockScoutWeb.AddressView do
   end
 
   @doc """
-  Returns the primary name of an address if available.
+  Returns the primary name of an address if available. If there is no names on address function performs preload of names association.
   """
   def primary_name(%Address{names: [_ | _] = address_names}) do
     case Enum.find(address_names, &(&1.primary == true)) do
-      nil -> nil
-      %Address.Name{name: name} -> name
+      nil ->
+        %Address.Name{name: name} = Enum.at(address_names, 0)
+        name
+
+      %Address.Name{name: name} ->
+        name
     end
   end
 
-  def primary_name(%Address{names: _}), do: nil
+  def primary_name(%Address{names: %Ecto.Association.NotLoaded{}} = address) do
+    primary_name(Repo.preload(address, [:names]))
+  end
+
+  def primary_name(%Address{names: _} = address) do
+    with false <- is_nil(address.contract_code),
+         twin <- Chain.get_verified_twin_contract(address),
+         false <- is_nil(twin) do
+      twin.name
+    else
+      _ ->
+        nil
+    end
+  end
+
+  def implementation_name(%Address{smart_contract: %{implementation_name: implementation_name}}),
+    do: implementation_name
+
+  def implementation_name(_), do: nil
 
   def primary_validator_metadata(%Address{names: [_ | _] = address_names}) do
     case Enum.find(address_names, &(&1.primary == true)) do
@@ -222,25 +247,29 @@ defmodule BlockScoutWeb.AddressView do
     |> Base.encode64()
   end
 
+  def smart_contract_verified?(%Address{smart_contract: %{metadata_from_verified_twin: true}}), do: false
+
   def smart_contract_verified?(%Address{smart_contract: %SmartContract{}}), do: true
 
   def smart_contract_verified?(%Address{smart_contract: nil}), do: false
 
   def smart_contract_with_read_only_functions?(%Address{smart_contract: %SmartContract{}} = address) do
-    Enum.any?(address.smart_contract.abi, &(&1["constant"] || &1["stateMutability"] == "view"))
+    Enum.any?(address.smart_contract.abi || [], &is_read_function?(&1))
   end
 
   def smart_contract_with_read_only_functions?(%Address{smart_contract: nil}), do: false
 
-  def smart_contract_is_proxy?(%Address{smart_contract: %SmartContract{}} = address) do
-    Chain.is_proxy_contract?(address.smart_contract.abi)
+  def is_read_function?(function), do: Helper.queriable_method?(function) || Helper.read_with_wallet_method?(function)
+
+  def smart_contract_is_proxy?(%Address{smart_contract: %SmartContract{} = smart_contract}) do
+    SmartContract.proxy_contract?(smart_contract)
   end
 
   def smart_contract_is_proxy?(%Address{smart_contract: nil}), do: false
 
   def smart_contract_with_write_functions?(%Address{smart_contract: %SmartContract{}} = address) do
     Enum.any?(
-      address.smart_contract.abi,
+      address.smart_contract.abi || [],
       &Writer.write_function?(&1)
     )
   end
@@ -253,16 +282,18 @@ defmodule BlockScoutWeb.AddressView do
   end
 
   def token_title(%Token{name: nil, contract_address_hash: contract_address_hash}) do
-    contract_address_hash
-    |> to_string
-    |> String.slice(0..5)
+    short_hash_left_right(contract_address_hash)
   end
 
   def token_title(%Token{name: name, symbol: symbol}), do: "#{name} (#{symbol})"
 
   def trimmed_hash(%Hash{} = hash) do
     string_hash = to_string(hash)
-    "#{String.slice(string_hash, 0..5)}–#{String.slice(string_hash, -6..-1)}"
+    trimmed_hash(string_hash)
+  end
+
+  def trimmed_hash(address) when is_binary(address) do
+    "#{String.slice(address, 0..7)}–#{String.slice(address, -6..-1)}"
   end
 
   def trimmed_hash(_), do: ""
@@ -288,9 +319,7 @@ defmodule BlockScoutWeb.AddressView do
     address.contracts_creation_transaction.from_address_hash
   end
 
-  def from_address_hash(_address) do
-    nil
-  end
+  def from_address_hash(_address), do: nil
 
   def address_link_to_other_explorer(link, address, full) do
     if full do
@@ -339,16 +368,16 @@ defmodule BlockScoutWeb.AddressView do
   end
 
   defp tab_name(["tokens"]), do: gettext("Tokens")
+  defp tab_name(["internal-transactions"]), do: gettext("Internal Transactions")
   defp tab_name(["transactions"]), do: gettext("Transactions")
-  defp tab_name(["internal_transactions"]), do: gettext("Internal Transactions")
-  defp tab_name(["token_transfers"]), do: gettext("Token Transfers")
+  defp tab_name(["token-transfers"]), do: gettext("Token Transfers")
   defp tab_name(["contracts"]), do: gettext("Code")
-  defp tab_name(["decompiled_contracts"]), do: gettext("Decompiled Code")
-  defp tab_name(["read_contract"]), do: gettext("Read Contract")
-  defp tab_name(["read_proxy"]), do: gettext("Read Proxy")
-  defp tab_name(["write_contract"]), do: gettext("Write Contract")
-  defp tab_name(["write_proxy"]), do: gettext("Write Proxy")
-  defp tab_name(["coin_balances"]), do: gettext("Coin Balance History")
+  defp tab_name(["decompiled-contracts"]), do: gettext("Decompiled Code")
+  defp tab_name(["read-contract"]), do: gettext("Read Contract")
+  defp tab_name(["read-proxy"]), do: gettext("Read Proxy")
+  defp tab_name(["write-contract"]), do: gettext("Write Contract")
+  defp tab_name(["write-proxy"]), do: gettext("Write Proxy")
+  defp tab_name(["coin-balances"]), do: gettext("Coin Balance History")
   defp tab_name(["validations"]), do: gettext("Blocks Validated")
   defp tab_name(["logs"]), do: gettext("Logs")
 
@@ -362,7 +391,51 @@ defmodule BlockScoutWeb.AddressView do
     "0x" <> short_address
   end
 
+  def short_hash_left_right(hash) when not is_nil(hash) do
+    case hash do
+      "0x" <> rest ->
+        shortify_hash_string(rest)
+
+      %Chain.Hash{
+        byte_count: _,
+        bytes: bytes
+      } ->
+        shortify_hash_string(Base.encode16(bytes, case: :lower))
+
+      hash ->
+        shortify_hash_string(hash)
+    end
+  end
+
+  def short_hash_left_right(hash) when is_nil(hash), do: ""
+
+  defp shortify_hash_string(hash) do
+    <<
+      left::binary-size(6),
+      _middle::binary-size(28),
+      right::binary-size(6)
+    >> = to_string(hash)
+
+    "0x" <> left <> "-" <> right
+  end
+
   def short_contract_name(name, max_length) do
+    short_string(name, max_length)
+  end
+
+  def short_token_id(%Decimal{} = token_id, max_length) do
+    token_id
+    |> Decimal.to_string()
+    |> short_string(max_length)
+  end
+
+  def short_token_id(token_id, max_length) do
+    short_string(token_id, max_length)
+  end
+
+  def short_string(nil, _max_length), do: ""
+
+  def short_string(name, max_length) do
     part_length = Kernel.trunc(max_length / 4)
 
     if String.length(name) <= max_length,
@@ -377,4 +450,39 @@ defmodule BlockScoutWeb.AddressView do
       true -> "#{to_string(address)}"
     end
   end
+
+  def smart_contract_is_gnosis_safe_proxy?(%Address{smart_contract: %SmartContract{}} = address) do
+    address.smart_contract.name == "GnosisSafeProxy" && Chain.gnosis_safe_contract?(address.smart_contract.abi)
+  end
+
+  def smart_contract_is_gnosis_safe_proxy?(_address), do: false
+
+  def tag_name_to_label(tag_name) do
+    tag_name
+    |> String.replace(" ", "-")
+  end
+
+  def fetch_custom_abi(conn, address_hash) do
+    if current_user = current_user(conn) do
+      CustomABI.get_custom_abi_by_identity_id_and_address_hash(address_hash, current_user.id)
+    end
+  end
+
+  def has_address_custom_abi_with_read_functions?(conn, address_hash) do
+    custom_abi = fetch_custom_abi(conn, address_hash)
+
+    check_custom_abi_for_having_read_functions(custom_abi)
+  end
+
+  def check_custom_abi_for_having_read_functions(custom_abi),
+    do: !is_nil(custom_abi) && Enum.any?(custom_abi.abi, &is_read_function?(&1))
+
+  def has_address_custom_abi_with_write_functions?(conn, address_hash) do
+    custom_abi = fetch_custom_abi(conn, address_hash)
+
+    check_custom_abi_for_having_write_functions(custom_abi)
+  end
+
+  def check_custom_abi_for_having_write_functions(custom_abi),
+    do: !is_nil(custom_abi) && Enum.any?(custom_abi.abi, &Writer.write_function?(&1))
 end

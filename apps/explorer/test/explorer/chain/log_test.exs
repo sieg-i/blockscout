@@ -1,6 +1,8 @@
 defmodule Explorer.Chain.LogTest do
   use Explorer.DataCase
 
+  import Mox
+
   alias Ecto.Changeset
   alias Explorer.Chain.{Log, SmartContract}
   alias Explorer.Repo
@@ -58,28 +60,31 @@ defmodule Explorer.Chain.LogTest do
     end
 
     test "that a contract call transaction that has a verified contract returns the decoded input data" do
-      smart_contract =
-        insert(:smart_contract,
-          abi: [
-            %{
-              "anonymous" => false,
-              "inputs" => [
-                %{"indexed" => true, "name" => "_from_human", "type" => "string"},
-                %{"indexed" => false, "name" => "_number", "type" => "uint256"},
-                %{"indexed" => true, "name" => "_belly", "type" => "bool"}
-              ],
-              "name" => "WantsPets",
-              "type" => "event"
-            }
-          ]
-        )
+      to_address = insert(:address, contract_code: "0x")
 
-      topic1 = "0x" <> Base.encode16(:keccakf1600.hash(:sha3_256, "WantsPets(string,uint256,bool)"), case: :lower)
-      topic2 = "0x" <> Base.encode16(:keccakf1600.hash(:sha3_256, "bob"), case: :lower)
+      insert(:smart_contract,
+        abi: [
+          %{
+            "anonymous" => false,
+            "inputs" => [
+              %{"indexed" => true, "name" => "_from_human", "type" => "string"},
+              %{"indexed" => false, "name" => "_number", "type" => "uint256"},
+              %{"indexed" => true, "name" => "_belly", "type" => "bool"}
+            ],
+            "name" => "WantsPets",
+            "type" => "event"
+          }
+        ],
+        address_hash: to_address.hash,
+        contract_code_md5: "123"
+      )
+
+      topic1_bytes = ExKeccak.hash_256("WantsPets(string,uint256,bool)")
+      topic1 = "0x" <> Base.encode16(topic1_bytes, case: :lower)
+      topic2_bytes = ExKeccak.hash_256("bob")
+      topic2 = "0x" <> Base.encode16(topic2_bytes, case: :lower)
       topic3 = "0x0000000000000000000000000000000000000000000000000000000000000001"
       data = "0x0000000000000000000000000000000000000000000000000000000000000000"
-
-      to_address = insert(:address, smart_contract: smart_contract)
 
       transaction =
         :transaction_to_verified_contract
@@ -88,6 +93,7 @@ defmodule Explorer.Chain.LogTest do
 
       log =
         insert(:log,
+          address: to_address,
           transaction: transaction,
           first_topic: topic1,
           second_topic: topic2,
@@ -95,6 +101,10 @@ defmodule Explorer.Chain.LogTest do
           fourth_topic: nil,
           data: data
         )
+
+      blockchain_get_code_mock()
+
+      get_eip1967_implementation()
 
       assert Log.decode(log, transaction) ==
                {:ok, "eb9b3c4c", "WantsPets(string indexed _from_human, uint256 _number, bool indexed _belly)",
@@ -130,8 +140,10 @@ defmodule Explorer.Chain.LogTest do
       |> SmartContract.changeset(params)
       |> Repo.insert!()
 
-      topic1 = "0x" <> Base.encode16(:keccakf1600.hash(:sha3_256, "WantsPets(string,uint256,bool)"), case: :lower)
-      topic2 = "0x" <> Base.encode16(:keccakf1600.hash(:sha3_256, "bob"), case: :lower)
+      topic1_bytes = ExKeccak.hash_256("WantsPets(string,uint256,bool)")
+      topic1 = "0x" <> Base.encode16(topic1_bytes, case: :lower)
+      topic2_bytes = ExKeccak.hash_256("bob")
+      topic2 = "0x" <> Base.encode16(topic2_bytes, case: :lower)
       topic3 = "0x0000000000000000000000000000000000000000000000000000000000000001"
       data = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -161,5 +173,55 @@ defmodule Explorer.Chain.LogTest do
                    ]}
                 ]}
     end
+  end
+
+  defp blockchain_get_code_mock do
+    expect(
+      EthereumJSONRPC.Mox,
+      :json_rpc,
+      fn [%{id: id, method: "eth_getCode", params: [_, _]}], _options ->
+        {:ok, [%{id: id, jsonrpc: "2.0", result: "0x0"}]}
+      end
+    )
+  end
+
+  def get_eip1967_implementation do
+    EthereumJSONRPC.Mox
+    |> expect(:json_rpc, fn %{
+                              id: 0,
+                              method: "eth_getStorageAt",
+                              params: [
+                                _,
+                                "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+                                "latest"
+                              ]
+                            },
+                            _options ->
+      {:ok, "0x0000000000000000000000000000000000000000000000000000000000000000"}
+    end)
+    |> expect(:json_rpc, fn %{
+                              id: 0,
+                              method: "eth_getStorageAt",
+                              params: [
+                                _,
+                                "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50",
+                                "latest"
+                              ]
+                            },
+                            _options ->
+      {:ok, "0x0000000000000000000000000000000000000000000000000000000000000000"}
+    end)
+    |> expect(:json_rpc, fn %{
+                              id: 0,
+                              method: "eth_getStorageAt",
+                              params: [
+                                _,
+                                "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3",
+                                "latest"
+                              ]
+                            },
+                            _options ->
+      {:ok, "0x0000000000000000000000000000000000000000000000000000000000000000"}
+    end)
   end
 end

@@ -3,9 +3,11 @@ defmodule BlockScoutWeb.BlockView do
 
   import Math.Enum, only: [mean: 1]
 
+  alias Ecto.Association.NotLoaded
   alias Explorer.Chain
   alias Explorer.Chain.{Block, Wei}
   alias Explorer.Chain.Block.Reward
+  alias Explorer.Counters.{BlockBurnedFeeCounter, BlockPriorityFeeCounter}
 
   @dialyzer :no_match
 
@@ -22,6 +24,7 @@ defmodule BlockScoutWeb.BlockView do
     "#{average} #{unit_text}"
   end
 
+  def block_type(%Block{consensus: false, nephews: %NotLoaded{}}), do: "Reorg"
   def block_type(%Block{consensus: false, nephews: []}), do: "Reorg"
   def block_type(%Block{consensus: false}), do: "Uncle"
   def block_type(_block), do: "Block"

@@ -48,7 +48,6 @@ defmodule EthereumJSONRPC.Log do
         second_topic: nil,
         third_topic: nil,
         transaction_hash: "0x53bd884872de3e488692881baeec262e7b95234d3965248c39fe992fffd433e5",
-        block_hash: "0xf6b4b8c88df3ebd252ec476328334dc026cf66606a84fb769b3d3cbccc8471bd",
         type: "mined"
       }
 
@@ -73,7 +72,6 @@ defmodule EthereumJSONRPC.Log do
         address_hash: "0xda8b3276cde6d768a44b9dac659faa339a41ac55",
         block_hash: "0x0b89f7f894f5d8ba941e16b61490e999a0fcaaf92dfcc70aee2ac5ddb5f243e1",
         block_number: 4448,
-        block_hash: "0x0b89f7f894f5d8ba941e16b61490e999a0fcaaf92dfcc70aee2ac5ddb5f243e1",
         data: "0x290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563",
         first_topic: "0xadc1e8a294f8415511303acc4a8c0c5906c7eb0bf2a71043d7f4b03b46a39130",
         fourth_topic: nil,
@@ -137,7 +135,7 @@ defmodule EthereumJSONRPC.Log do
         "type" => "mined"
       }
 
-  Geth and Parity >= 1.11.4 includes a `"removed"` key
+  Geth includes a `"removed"` key
 
       iex> EthereumJSONRPC.Log.to_elixir(
       ...>   %{
@@ -173,8 +171,9 @@ defmodule EthereumJSONRPC.Log do
     Enum.into(log, %{}, &entry_to_elixir/1)
   end
 
-  defp entry_to_elixir({key, _} = entry) when key in ~w(address blockHash data removed topics transactionHash type),
-    do: entry
+  defp entry_to_elixir({key, _} = entry)
+       when key in ~w(address blockHash data removed topics transactionHash type timestamp),
+       do: entry
 
   defp entry_to_elixir({key, quantity}) when key in ~w(blockNumber logIndex transactionIndex transactionLogIndex) do
     if is_nil(quantity) do

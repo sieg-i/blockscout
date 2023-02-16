@@ -1,4 +1,4 @@
-defmodule BlockScoutWeb.SmartContractViewTest do
+defmodule BlockScoutWeb.Tokens.SmartContractViewTest do
   use BlockScoutWeb.ConnCase, async: true
 
   alias BlockScoutWeb.SmartContractView
@@ -15,9 +15,14 @@ defmodule BlockScoutWeb.SmartContractViewTest do
 
       refute SmartContractView.queryable?(inputs)
     end
+
+    test "returns true if list of inputs is not empty" do
+      assert SmartContractView.queryable?([%{"name" => "argument_name", "type" => "uint256"}]) == true
+      assert SmartContractView.queryable?([]) == false
+    end
   end
 
-  describe "writeable?" do
+  describe "writable?" do
     test "returns true when there is write function" do
       function = %{
         "type" => "function",
@@ -29,7 +34,7 @@ defmodule BlockScoutWeb.SmartContractViewTest do
         "constant" => false
       }
 
-      assert SmartContractView.writeable?(function)
+      assert SmartContractView.writable?(function)
     end
 
     test "returns false when it is not a write function" do
@@ -43,19 +48,19 @@ defmodule BlockScoutWeb.SmartContractViewTest do
         "constant" => true
       }
 
-      refute SmartContractView.writeable?(function)
+      refute SmartContractView.writable?(function)
     end
 
     test "returns false when there is no function" do
       function = %{}
 
-      refute SmartContractView.writeable?(function)
+      refute SmartContractView.writable?(function)
     end
 
     test "returns false when there function is nil" do
       function = nil
 
-      refute SmartContractView.writeable?(function)
+      refute SmartContractView.writable?(function)
     end
   end
 
@@ -73,128 +78,12 @@ defmodule BlockScoutWeb.SmartContractViewTest do
     end
   end
 
-  describe "payable?" do
-    test "returns true when there is payable function" do
-      function = %{
-        "type" => "function",
-        "stateMutability" => "payable",
-        "payable" => true,
-        "outputs" => [],
-        "name" => "upgradeToAndCall",
-        "inputs" => [
-          %{"type" => "uint256", "name" => "version"},
-          %{"type" => "address", "name" => "implementation"},
-          %{"type" => "bytes", "name" => "data"}
-        ],
-        "constant" => false
-      }
-
-      assert SmartContractView.payable?(function)
-    end
-
-    test "returns true when there is old-style payable function" do
-      function = %{
-        "type" => "function",
-        "payable" => true,
-        "outputs" => [],
-        "name" => "upgradeToAndCall",
-        "inputs" => [
-          %{"type" => "uint256", "name" => "version"},
-          %{"type" => "address", "name" => "implementation"},
-          %{"type" => "bytes", "name" => "data"}
-        ],
-        "constant" => false
-      }
-
-      assert SmartContractView.payable?(function)
-    end
-
-    test "returns false when it is nonpayable function" do
-      function = %{
-        "type" => "function",
-        "stateMutability" => "nonpayable",
-        "payable" => false,
-        "outputs" => [],
-        "name" => "transferProxyOwnership",
-        "inputs" => [%{"type" => "address", "name" => "newOwner"}],
-        "constant" => false
-      }
-
-      refute SmartContractView.payable?(function)
-    end
-
-    test "returns false when there is no function" do
-      function = %{}
-
-      refute SmartContractView.payable?(function)
-    end
-
-    test "returns false when function is nil" do
-      function = nil
-
-      refute SmartContractView.payable?(function)
-    end
-  end
-
-  describe "nonpayable?" do
-    test "returns true when there is nonpayable function" do
-      function = %{
-        "type" => "function",
-        "stateMutability" => "nonpayable",
-        "payable" => false,
-        "outputs" => [],
-        "name" => "transferProxyOwnership",
-        "inputs" => [%{"type" => "address", "name" => "newOwner"}],
-        "constant" => false
-      }
-
-      assert SmartContractView.nonpayable?(function)
-    end
-
-    test "returns true when there is old-style nonpayable function" do
-      function = %{
-        "type" => "function",
-        "outputs" => [],
-        "name" => "test",
-        "inputs" => [%{"type" => "address", "name" => "newOwner"}],
-        "constant" => false
-      }
-
-      assert SmartContractView.nonpayable?(function)
-    end
-
-    test "returns false when it is payable function" do
-      function = %{
-        "type" => "function",
-        "stateMutability" => "payable",
-        "payable" => true,
-        "outputs" => [],
-        "name" => "upgradeToAndCall",
-        "inputs" => [
-          %{"type" => "uint256", "name" => "version"},
-          %{"type" => "address", "name" => "implementation"},
-          %{"type" => "bytes", "name" => "data"}
-        ],
-        "constant" => false
-      }
-
-      refute SmartContractView.nonpayable?(function)
-    end
-
-    test "returns true when there is no function" do
-      function = %{}
-
-      refute SmartContractView.nonpayable?(function)
-    end
-
-    test "returns false when function is nil" do
-      function = nil
-
-      refute SmartContractView.nonpayable?(function)
-    end
-  end
-
   describe "address?" do
+    test "returns true if type equals `address`" do
+      assert SmartContractView.address?("address") == true
+      assert SmartContractView.address?("uint256") == false
+    end
+
     test "returns true when the type is equal to the string 'address'" do
       type = "address"
 
@@ -237,40 +126,6 @@ defmodule BlockScoutWeb.SmartContractViewTest do
       arguments = nil
 
       refute SmartContractView.named_argument?(arguments)
-    end
-  end
-
-  describe "values/2" do
-    test "joins the values when it is a list of a given type" do
-      values = [8, 6, 9, 2, 2, 37]
-
-      assert SmartContractView.values(values, "type") == "8,6,9,2,2,37"
-    end
-
-    test "convert the value to string receiving a value and the 'address' type" do
-      value = <<95, 38, 9, 115, 52, 182, 163, 43, 121, 81, 223, 97, 253, 12, 88, 3, 236, 93, 131, 84>>
-      assert SmartContractView.values(value, "address") == "0x5f26097334b6a32b7951df61fd0c5803ec5d8354"
-    end
-
-    test "convert the value to string receiving a value and the 'address payable' type" do
-      value = <<95, 38, 9, 115, 52, 182, 163, 43, 121, 81, 223, 97, 253, 12, 88, 3, 236, 93, 131, 84>>
-      assert SmartContractView.values(value, "address payable") == "0x5f26097334b6a32b7951df61fd0c5803ec5d8354"
-    end
-
-    test "convert each value to string and join them when receiving 'address[]' as the type" do
-      value = [
-        <<95, 38, 9, 115, 52, 182, 163, 43, 121, 81, 223, 97, 253, 12, 88, 3, 236, 93, 131, 84>>,
-        <<207, 38, 14, 163, 23, 85, 86, 55, 197, 95, 112, 229, 93, 186, 141, 90, 216, 65, 76, 176>>
-      ]
-
-      assert SmartContractView.values(value, "address[]") ==
-               "0x5f26097334b6a32b7951df61fd0c5803ec5d8354, 0xcf260ea317555637c55f70e55dba8d5ad8414cb0"
-    end
-
-    test "returns the value when the type is neither 'address' nor 'address payable'" do
-      value = "POA"
-
-      assert SmartContractView.values(value, "not address") == "POA"
     end
   end
 end

@@ -1,23 +1,23 @@
 defmodule BlockScoutWeb.LayoutView do
   use BlockScoutWeb, :view
 
+  alias Explorer.Chain
   alias Plug.Conn
   alias Poison.Parser
 
-  @issue_url "https://github.com/poanetwork/blockscout/issues/new"
   @default_other_networks [
     %{
-      title: "POA Core",
+      title: "POA",
       url: "https://blockscout.com/poa/core"
     },
     %{
-      title: "POA Sokol",
+      title: "Sokol",
       url: "https://blockscout.com/poa/sokol",
       test_net?: true
     },
     %{
-      title: "xDai Chain",
-      url: "https://blockscout.com/poa/xdai"
+      title: "Gnosis Chain",
+      url: "https://blockscout.com/xdai/mainnet"
     },
     %{
       title: "Ethereum Classic",
@@ -25,7 +25,7 @@ defmodule BlockScoutWeb.LayoutView do
       other?: true
     },
     %{
-      title: "RSK Mainnet",
+      title: "RSK",
       url: "https://blockscout.com/rsk/mainnet",
       other?: true
     }
@@ -34,16 +34,19 @@ defmodule BlockScoutWeb.LayoutView do
   alias BlockScoutWeb.SocialMedia
 
   def logo do
-    Keyword.get(application_config(), :logo) || "/images/blockscout_logo.svg"
+    Keyword.get(application_config(), :logo)
   end
 
   def logo_footer do
-    Keyword.get(application_config(), :logo_footer) || Keyword.get(application_config(), :logo) ||
-      "/images/blockscout_logo.svg"
+    Keyword.get(application_config(), :logo_footer) || Keyword.get(application_config(), :logo)
+  end
+
+  def logo_text do
+    Keyword.get(application_config(), :logo_text) || nil
   end
 
   def subnetwork_title do
-    Keyword.get(application_config(), :subnetwork) || "POA Sokol"
+    Keyword.get(application_config(), :subnetwork) || "Sokol"
   end
 
   def network_title do
@@ -65,7 +68,9 @@ defmodule BlockScoutWeb.LayoutView do
       title: subnetwork_title() <> ": <Issue Title>"
     ]
 
-    [@issue_url, "?", URI.encode_query(params)]
+    issue_url = "#{Application.get_env(:block_scout_web, :footer)[:github_link]}/issues/new"
+
+    [issue_url, "?", URI.encode_query(params)]
   end
 
   defp issue_body(conn) do
@@ -113,7 +118,7 @@ defmodule BlockScoutWeb.LayoutView do
           nil
 
         release_link_env_var == "" || release_link_env_var == nil ->
-          "https://github.com/poanetwork/blockscout/releases/tag/" <> version
+          "https://github.com/blockscout/blockscout/releases/tag/" <> version
 
         true ->
           release_link_env_var
@@ -190,10 +195,16 @@ defmodule BlockScoutWeb.LayoutView do
 
   def other_explorers do
     if Application.get_env(:block_scout_web, :link_to_other_explorers) do
-      Application.get_env(:block_scout_web, :other_explorers, [])
+      decode_other_explorers_json(Application.get_env(:block_scout_web, :other_explorers, []))
     else
       []
     end
+  end
+
+  defp decode_other_explorers_json(data) do
+    Jason.decode!(~s(#{data}))
+  rescue
+    _ -> []
   end
 
   def webapp_url(conn) do
@@ -216,11 +227,12 @@ defmodule BlockScoutWeb.LayoutView do
     end
   end
 
-  def external_apps_list do
-    if Application.get_env(:block_scout_web, :external_apps) do
+  def apps_list do
+    apps = Application.get_env(:block_scout_web, :apps)
+
+    if apps do
       try do
-        :block_scout_web
-        |> Application.get_env(:external_apps)
+        apps
         |> Parser.parse!(%{keys: :atoms!})
       rescue
         _ ->
@@ -239,4 +251,29 @@ defmodule BlockScoutWeb.LayoutView do
   end
 
   defp validate_url(_), do: :error
+
+  def sign_in_link do
+    if Mix.env() == :test do
+      "/auth/auth0"
+    else
+      Application.get_env(:block_scout_web, BlockScoutWeb.Endpoint)[:url][:path] <> "/auth/auth0"
+    end
+  end
+
+  def sign_out_link do
+    client_id = Application.get_env(:ueberauth, Ueberauth.Strategy.Auth0.OAuth)[:client_id]
+    return_to = Application.get_env(:ueberauth, Ueberauth)[:logout_return_to_url]
+    logout_url = Application.get_env(:ueberauth, Ueberauth)[:logout_url]
+
+    if client_id && return_to && logout_url do
+      params = [
+        client_id: client_id,
+        returnTo: return_to
+      ]
+
+      [logout_url, "?", URI.encode_query(params)]
+    else
+      []
+    end
+  end
 end

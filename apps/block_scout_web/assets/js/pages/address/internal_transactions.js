@@ -1,5 +1,5 @@
 import $ from 'jquery'
-import omit from 'lodash/omit'
+import omit from 'lodash.omit'
 import humps from 'humps'
 import numeral from 'numeral'
 import socket from '../../socket'
@@ -7,6 +7,7 @@ import { batchChannel } from '../../lib/utils'
 import { connectElements } from '../../lib/redux_helpers.js'
 import { createAsyncLoadStore } from '../../lib/async_listing_load'
 import '../address'
+import { isFiltered } from './utils'
 
 const BATCH_THRESHOLD = 10
 
@@ -65,20 +66,41 @@ export function reducer (state, action) {
 const elements = {
   '[data-selector="channel-disconnected-message"]': {
     render ($el, state) {
-      if (state.channelDisconnected) $el.show()
+      // @ts-ignore
+      if (state.channelDisconnected && !window.loading) $el.show()
     }
   },
   '[data-selector="channel-batching-count"]': {
-    render ($el, state, oldState) {
+    render ($el, state) {
       const $channelBatching = $('[data-selector="channel-batching-message"]')
       if (!state.internalTransactionsBatch.length) return $channelBatching.hide()
       $channelBatching.show()
       $el[0].innerHTML = numeral(state.internalTransactionsBatch.length).format()
     }
+  },
+  '[data-test="filter_dropdown"]': {
+    render ($el, state) {
+      if (state.emptyResponse && !state.isSearch) {
+        if (isFiltered(state.filter)) {
+          $el.addClass('no-rm')
+        } else {
+          return $el.hide()
+        }
+      } else {
+        $el.removeClass('no-rm')
+      }
+
+      return $el.show()
+    }
   }
 }
 
 if ($('[data-page="address-internal-transactions"]').length) {
+  window.onbeforeunload = () => {
+    // @ts-ignore
+    window.loading = true
+  }
+
   const store = createAsyncLoadStore(reducer, initialState, 'dataset.key')
   const addressHash = $('[data-page="address-details"]')[0].dataset.pageAddressHash
 

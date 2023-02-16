@@ -2,6 +2,7 @@ defmodule Explorer.ExchangeRates.Source do
   @moduledoc """
   Behaviour for fetching exchange rates from external sources.
   """
+  alias Explorer.ExchangeRates.Source.CoinGecko
   alias Explorer.ExchangeRates.Token
   alias HTTPoison.{Error, Response}
 
@@ -10,24 +11,42 @@ defmodule Explorer.ExchangeRates.Source do
   """
   @spec fetch_exchange_rates(module) :: {:ok, [Token.t()]} | {:error, any}
   def fetch_exchange_rates(source \\ exchange_rates_source()) do
-    fetch_exchange_rates_request(source)
+    source_url = source.source_url()
+    fetch_exchange_rates_request(source, source_url, source.headers())
   end
 
-  defp fetch_exchange_rates_request(source) do
-    case HTTPoison.get(source.source_url(), headers()) do
-      {:ok, %Response{body: body, status_code: 200}} ->
-        result =
-          body
-          |> decode_json()
-          |> source.format_data()
+  @spec fetch_exchange_rates_for_token(String.t()) :: {:ok, [Token.t()]} | {:error, any}
+  def fetch_exchange_rates_for_token(symbol) do
+    source_url = CoinGecko.source_url(symbol)
+    headers = CoinGecko.headers()
+    fetch_exchange_rates_request(CoinGecko, source_url, headers)
+  end
 
-        {:ok, result}
+  @spec fetch_exchange_rates_for_token_address(String.t()) :: {:ok, [Token.t()]} | {:error, any}
+  def fetch_exchange_rates_for_token_address(address_hash) do
+    source_url = CoinGecko.source_url(address_hash)
+    headers = CoinGecko.headers()
+    fetch_exchange_rates_request(CoinGecko, source_url, headers)
+  end
 
-      {:ok, %Response{body: body, status_code: status_code}} when status_code in 400..499 ->
-        {:error, decode_json(body)["error"]}
+  defp fetch_exchange_rates_request(_source, source_url, _headers) when is_nil(source_url),
+    do: {:error, "Source URL is nil"}
 
-      {:error, %Error{reason: reason}} ->
-        {:error, reason}
+  defp fetch_exchange_rates_request(source, source_url, headers) do
+    case http_request(source_url, headers) do
+      {:ok, result} = resp ->
+        if is_map(result) do
+          result_formatted =
+            result
+            |> source.format_data()
+
+          {:ok, result_formatted}
+        else
+          resp
+        end
+
+      resp ->
+        resp
     end
   end
 
@@ -40,6 +59,10 @@ defmodule Explorer.ExchangeRates.Source do
   Url for the api to query to get the market info.
   """
   @callback source_url :: String.t()
+
+  @callback source_url(String.t()) :: String.t() | :ignore
+
+  @callback headers :: [any]
 
   def headers do
     [{"Content-Type", "application/json"}]
@@ -71,5 +94,55 @@ defmodule Explorer.ExchangeRates.Source do
   @spec config(atom()) :: term
   defp config(key) do
     Application.get_env(:explorer, __MODULE__, [])[key]
+  end
+
+  def http_request(source_url, additional_headers) do
+    case HTTPoison.get(source_url, headers() ++ additional_headers) do
+      {:ok, %Response{body: body, status_code: 200}} ->
+        parse_http_success_response(body)
+
+      {:ok, %Response{body: body, status_code: status_code}} when status_code in 400..526 ->
+        parse_http_error_response(body)
+
+      {:ok, %Response{status_code: status_code}} when status_code in 300..308 ->
+        {:error, "Source redirected"}
+
+      {:ok, %Response{status_code: _status_code}} ->
+        {:error, "Source unexpected status code"}
+
+      {:error, %Error{reason: reason}} ->
+        {:error, reason}
+
+      {:error, :nxdomain} ->
+        {:error, "Source is not responsive"}
+
+      {:error, _} ->
+        {:error, "Source unknown response"}
+    end
+  end
+
+  defp parse_http_success_response(body) do
+    body_json = decode_json(body)
+
+    cond do
+      is_map(body_json) ->
+        {:ok, body_json}
+
+      is_list(body_json) ->
+        {:ok, body_json}
+
+      true ->
+        {:ok, body}
+    end
+  end
+
+  defp parse_http_error_response(body) do
+    body_json = decode_json(body)
+
+    if is_map(body_json) do
+      {:error, body_json["error"]}
+    else
+      {:error, body}
+    end
   end
 end

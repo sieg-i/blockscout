@@ -5,22 +5,28 @@ defmodule Indexer.Supervisor do
 
   use Supervisor
 
-  alias Indexer.{Block, PendingOpsCleaner}
+  alias Indexer.{
+    Block,
+    PendingOpsCleaner,
+    PendingTransactionsSanitizer
+  }
+
   alias Indexer.Block.{Catchup, Realtime}
 
   alias Indexer.Fetcher.{
     BlockReward,
     CoinBalance,
-    CoinBalanceOnDemand,
     ContractCode,
+    EmptyBlocksSanitizer,
     InternalTransaction,
+    PendingBlockOperationsSanitizer,
     PendingTransaction,
     ReplacedTransaction,
-    StakingPools,
     Token,
     TokenBalance,
     TokenInstance,
     TokenUpdater,
+    TransactionAction,
     UncleBlock
   }
 
@@ -86,15 +92,14 @@ defmodule Indexer.Supervisor do
 
     realtime_subscribe_named_arguments = realtime_overrides[:subscribe_named_arguments] || subscribe_named_arguments
 
-    Supervisor.init(
+    basic_fetchers =
       [
         # Root fetchers
         {PendingTransaction.Supervisor, [[json_rpc_named_arguments: json_rpc_named_arguments]]},
-        {Realtime.Supervisor,
-         [
-           %{block_fetcher: realtime_block_fetcher, subscribe_named_arguments: realtime_subscribe_named_arguments},
-           [name: Realtime.Supervisor]
-         ]},
+        configure(Realtime.Supervisor, [
+          %{block_fetcher: realtime_block_fetcher, subscribe_named_arguments: realtime_subscribe_named_arguments},
+          [name: Realtime.Supervisor]
+        ]),
         {Catchup.Supervisor,
          [
            %{block_fetcher: block_fetcher, block_interval: block_interval, memory_monitor: memory_monitor},
@@ -111,7 +116,10 @@ defmodule Indexer.Supervisor do
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {Token.Supervisor, [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {TokenInstance.Supervisor,
-         [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
+         [
+           [json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]
+         ]},
+        configure(TransactionAction.Supervisor, [[memory_monitor: memory_monitor]]),
         {ContractCode.Supervisor,
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {TokenBalance.Supervisor,
@@ -119,10 +127,10 @@ defmodule Indexer.Supervisor do
         {TokenUpdater.Supervisor,
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {ReplacedTransaction.Supervisor, [[memory_monitor: memory_monitor]]},
-        {StakingPools.Supervisor, [[memory_monitor: memory_monitor]]},
 
         # Out-of-band fetchers
-        {CoinBalanceOnDemand.Supervisor, [json_rpc_named_arguments]},
+        {EmptyBlocksSanitizer.Supervisor, [[json_rpc_named_arguments: json_rpc_named_arguments]]},
+        {PendingTransactionsSanitizer, [[json_rpc_named_arguments: json_rpc_named_arguments]]},
 
         # Temporary workers
         {UncatalogedTokenTransfers.Supervisor, [[]]},
@@ -130,9 +138,22 @@ defmodule Indexer.Supervisor do
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
         {BlocksTransactionsMismatch.Supervisor,
          [[json_rpc_named_arguments: json_rpc_named_arguments, memory_monitor: memory_monitor]]},
-        {PendingOpsCleaner, [[], []]}
-      ],
+        {PendingOpsCleaner, [[], []]},
+        {PendingBlockOperationsSanitizer, [[]]}
+      ]
+      |> List.flatten()
+
+    Supervisor.init(
+      basic_fetchers,
       strategy: :one_for_one
     )
+  end
+
+  defp configure(process, opts) do
+    if Application.get_env(:indexer, process)[:enabled] do
+      [{process, opts}]
+    else
+      []
+    end
   end
 end

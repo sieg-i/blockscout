@@ -10,18 +10,11 @@ defmodule Indexer.MixProject do
       deps: deps(),
       deps_path: "../../deps",
       description: "Fetches block chain data from on-chain node for later reading with Explorer.",
-      elixir: "~> 1.10",
+      elixir: "~> 1.13",
       elixirc_paths: elixirc_paths(Mix.env()),
       lockfile: "../../mix.lock",
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ],
       start_permanent: Mix.env() == :prod,
-      test_coverage: [tool: ExCoveralls],
-      version: "0.1.0"
+      version: "5.1.0"
     ]
   end
 
@@ -45,13 +38,11 @@ defmodule Indexer.MixProject do
   defp deps do
     [
       # Optional dependency of `:spandex` for `Spandex.Decorators`
-      {:decorator, "~> 1.2"},
-      # JSONRPC access to Parity for `Explorer.Indexer`
+      {:decorator, "~> 1.4"},
+      # JSONRPC access to Nethermind for `Explorer.Indexer`
       {:ethereum_jsonrpc, in_umbrella: true},
       # RLP encoding
       {:ex_rlp, "~> 0.5.2"},
-      # Code coverage
-      {:excoveralls, "~> 0.10.0", only: [:test], github: "KronicDeth/excoveralls", branch: "circle-workflows"},
       # Importing to database
       {:explorer, in_umbrella: true},
       # libsecp2561k1 crypto functions
@@ -59,11 +50,12 @@ defmodule Indexer.MixProject do
       # Log errors and application output to separate files
       {:logger_file_backend, "~> 0.0.10"},
       # Mocking `EthereumJSONRPC.Transport`, so we avoid hitting real chains for local testing
-      {:mox, "~> 0.4", only: [:test]},
+      {:mox, "~> 1.0", only: [:test]},
+      {:prometheus_ex, git: "https://github.com/lanodan/prometheus.ex", branch: "fix/elixir-1.14", override: true},
       # Tracing
-      {:spandex, github: "spandex-project/spandex", branch: "allow-setting-trace-key", override: true},
+      {:spandex, "~> 3.0"},
       # `:spandex` integration with Datadog
-      {:spandex_datadog, "~> 0.4.0"}
+      {:spandex_datadog, "~> 1.0"}
     ]
   end
 

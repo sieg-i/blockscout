@@ -1,10 +1,10 @@
 import $ from 'jquery'
-import omit from 'lodash/omit'
+import omit from 'lodash.omit'
 import humps from 'humps'
 import numeral from 'numeral'
 import socket from '../socket'
 import { connectElements } from '../lib/redux_helpers'
-import { createAsyncLoadStore } from '../lib/async_listing_load'
+import { createAsyncLoadStore } from '../lib/random_access_pagination'
 import { batchChannel } from '../lib/utils'
 import '../app'
 
@@ -58,11 +58,12 @@ export function reducer (state = initialState, action) {
 const elements = {
   '[data-selector="channel-disconnected-message"]': {
     render ($el, state) {
-      if (state.channelDisconnected) $el.show()
+      // @ts-ignore
+      if (state.channelDisconnected && !window.loading) $el.show()
     }
   },
   '[data-selector="channel-batching-count"]': {
-    render ($el, state, oldState) {
+    render ($el, state, _oldState) {
       const $channelBatching = $('[data-selector="channel-batching-message"]')
       if (!state.transactionsBatch.length) return $channelBatching.hide()
       $channelBatching.show()
@@ -82,6 +83,11 @@ const elements = {
 
 const $transactionListPage = $('[data-page="transaction-list"]')
 if ($transactionListPage.length) {
+  window.onbeforeunload = () => {
+    // @ts-ignore
+    window.loading = true
+  }
+
   const store = createAsyncLoadStore(reducer, initialState, 'dataset.identifierHash')
 
   connectElements({ store, elements })
@@ -91,8 +97,12 @@ if ($transactionListPage.length) {
   transactionsChannel.onError(() => store.dispatch({
     type: 'CHANNEL_DISCONNECTED'
   }))
-  transactionsChannel.on('transaction', batchChannel((msgs) => store.dispatch({
-    type: 'RECEIVED_NEW_TRANSACTION_BATCH',
-    msgs: humps.camelizeKeys(msgs)
-  })))
+  transactionsChannel.on('transaction', batchChannel((msgs) => {
+    if (!store.getState().beyondPageOne && !store.getState().loading) {
+      store.dispatch({
+        type: 'RECEIVED_NEW_TRANSACTION_BATCH',
+        msgs: humps.camelizeKeys(msgs)
+      })
+    }
+  }))
 }

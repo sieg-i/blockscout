@@ -26,8 +26,8 @@ function wrapJsonRpc (method, params) {
   return {
     id: 0,
     jsonrpc: '2.0',
-    method: method,
-    params: params
+    method,
+    params
   }
 }
 
@@ -39,7 +39,12 @@ function parseInput (input) {
     case 'string':
       return value
     case 'json':
-      return JSON.parse(value)
+      try {
+        // @ts-ignore
+        return JSON.parse(value)
+      } catch (e) {
+        return {}
+      }
     default:
       return value
   }
@@ -72,5 +77,7 @@ $('button[data-try-eth-api-ui-button-type="execute"]').click(event => {
     data: JSON.stringify(formData),
     dataType: 'json',
     contentType: 'application/json; charset=utf-8'
-  }).then((_data, _status, xhr) => handleResponse(formData, xhr, clickedButton))
+  })
+    .then((_data, _status, xhr) => handleResponse(formData, xhr, clickedButton))
+    .fail((xhr) => handleResponse(formData, xhr, clickedButton))
 })

@@ -3,7 +3,7 @@ defmodule Explorer.Chain.AddressTransactionCsvExporterTest do
 
   alias Explorer.Chain.{AddressTransactionCsvExporter, Wei}
 
-  describe "export/1" do
+  describe "export/3" do
     test "exports address transactions to csv" do
       address = insert(:address)
 
@@ -13,39 +13,42 @@ defmodule Explorer.Chain.AddressTransactionCsvExporterTest do
         |> with_block()
         |> Repo.preload(:token_transfers)
 
+      from_period = Timex.format!(Timex.shift(Timex.now(), minutes: -1), "%Y-%m-%d", :strftime)
+      to_period = Timex.format!(Timex.now(), "%Y-%m-%d", :strftime)
+
       [result] =
         address
-        |> AddressTransactionCsvExporter.export()
+        |> AddressTransactionCsvExporter.export(from_period, to_period)
         |> Enum.to_list()
         |> Enum.drop(1)
         |> Enum.map(fn [
-                         hash,
+                         [[], hash],
                          _,
-                         block_number,
+                         [[], block_number],
                          _,
-                         timestamp,
+                         [[], timestamp],
                          _,
-                         from_address,
+                         [[], from_address],
                          _,
-                         to_address,
+                         [[], to_address],
                          _,
-                         created_address,
+                         [[], created_address],
                          _,
-                         type,
+                         [[], type],
                          _,
-                         value,
+                         [[], value],
                          _,
-                         fee,
+                         [[], fee],
                          _,
-                         status,
+                         [[], status],
                          _,
-                         error,
+                         [[], error],
                          _,
-                         cur_price,
+                         [[], cur_price],
                          _,
-                         op_price,
+                         [[], op_price],
                          _,
-                         cl_price,
+                         [[], cl_price],
                          _
                        ] ->
           %{
@@ -93,13 +96,32 @@ defmodule Explorer.Chain.AddressTransactionCsvExporterTest do
       end)
       |> Enum.count()
 
+      1..200
+      |> Enum.map(fn _ ->
+        :transaction
+        |> insert(to_address: address)
+        |> with_block()
+      end)
+      |> Enum.count()
+
+      1..200
+      |> Enum.map(fn _ ->
+        :transaction
+        |> insert(created_contract_address: address)
+        |> with_block()
+      end)
+      |> Enum.count()
+
+      from_period = Timex.format!(Timex.shift(Timex.now(), minutes: -1), "%Y-%m-%d", :strftime)
+      to_period = Timex.format!(Timex.now(), "%Y-%m-%d", :strftime)
+
       result =
         address
-        |> AddressTransactionCsvExporter.export()
+        |> AddressTransactionCsvExporter.export(from_period, to_period)
         |> Enum.to_list()
         |> Enum.drop(1)
 
-      assert Enum.count(result) == 200
+      assert Enum.count(result) == 600
     end
   end
 end

@@ -1,6 +1,10 @@
 import $ from 'jquery'
-import Chart from 'chart.js'
+import { Chart, Filler, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip } from 'chart.js'
+import 'chartjs-adapter-luxon'
 import humps from 'humps'
+
+Chart.defaults.font.family = 'Nunito, "Helvetica Neue", Arial, sans-serif,"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"'
+Chart.register(Filler, LineController, LineElement, PointElement, LinearScale, TimeScale, Title, Tooltip)
 
 export function createCoinBalanceHistoryChart (el) {
   const $chartContainer = $('[data-chart-container]')
@@ -18,11 +22,14 @@ export function createCoinBalanceHistoryChart (el) {
           y: balance.value
         }))
 
-      var stepSize = 3
+      let stepSize = 3
 
       if (data.length > 1) {
-        var diff = Math.abs(new Date(data[data.length - 1].date) - new Date(data[data.length - 2].date))
-        var periodInDays = diff / (1000 * 60 * 60 * 24)
+        const date1 = new Date(data[data.length - 1].date)
+        const date2 = new Date(data[data.length - 2].date)
+        // @ts-ignore
+        const diff = Math.abs(date1 - date2)
+        const periodInDays = diff / (1000 * 60 * 60 * 24)
 
         stepSize = periodInDays
       }
@@ -32,30 +39,47 @@ export function createCoinBalanceHistoryChart (el) {
           datasets: [{
             label: 'coin balance',
             data: coinBalanceHistoryData,
-            lineTension: 0
+            // @ts-ignore
+            lineTension: 0,
+            cubicInterpolationMode: 'monotone',
+            fill: true
           }]
         },
-        options: {
+        plugins: {
+          // @ts-ignore
           legend: {
             display: false
-          },
+          }
+        },
+        interaction: {
+          intersect: false,
+          mode: 'index'
+        },
+        options: {
           scales: {
-            xAxes: [{
+            x: {
+              // @ts-ignore
               type: 'time',
               time: {
                 unit: 'day',
-                stepSize: stepSize
+                tooltipFormat: 'DD',
+                // @ts-ignore
+                stepSize
               }
-            }],
-            yAxes: [{
+            },
+            y: {
+              // @ts-ignore
+              type: 'linear',
               ticks: {
+                // @ts-ignore
                 beginAtZero: true
               },
-              scaleLabel: {
+              title: {
                 display: true,
+                // @ts-ignore
                 labelString: window.localized.Ether
               }
-            }]
+            }
           }
         }
       })

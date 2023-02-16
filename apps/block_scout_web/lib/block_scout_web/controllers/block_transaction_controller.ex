@@ -2,11 +2,11 @@ defmodule BlockScoutWeb.BlockTransactionController do
   use BlockScoutWeb, :controller
 
   import BlockScoutWeb.Chain,
-    only: [paging_options: 1, next_page_params: 3, split_list_by_page: 1]
+    only: [paging_options: 1, put_key_value_to_paging_options: 3, next_page_params: 3, split_list_by_page: 1]
 
   import Explorer.Chain, only: [hash_to_block: 2, number_to_block: 2, string_to_block_hash: 1]
 
-  alias BlockScoutWeb.TransactionView
+  alias BlockScoutWeb.{Controller, TransactionView}
   alias Explorer.Chain
   alias Phoenix.View
 
@@ -23,10 +23,13 @@ defmodule BlockScoutWeb.BlockTransactionController do
                 :block => :optional,
                 [created_contract_address: :names] => :optional,
                 [from_address: :names] => :required,
-                [to_address: :names] => :optional
+                [to_address: :names] => :optional,
+                [created_contract_address: :smart_contract] => :optional,
+                [from_address: :smart_contract] => :optional,
+                [to_address: :smart_contract] => :optional
               }
             ],
-            paging_options(params)
+            put_key_value_to_paging_options(paging_options(params), :is_index_in_asc_order, true)
           )
 
         transactions_plus_one = Chain.block_to_transactions(block.hash, full_options)
@@ -50,10 +53,19 @@ defmodule BlockScoutWeb.BlockTransactionController do
         items =
           transactions
           |> Enum.map(fn transaction ->
+            token_transfers_filtered_by_block_hash =
+              transaction.token_transfers
+              |> Enum.filter(fn token_transfer ->
+                token_transfer.block_hash == transaction.block_hash
+              end)
+
+            transaction_with_transfers_filtered =
+              Map.put(transaction, :token_transfers, token_transfers_filtered_by_block_hash)
+
             View.render_to_string(
               TransactionView,
               "_tile.html",
-              transaction: transaction,
+              transaction: transaction_with_transfers_filtered,
               burn_address_hash: @burn_address_hash,
               conn: conn
             )
@@ -101,7 +113,7 @@ defmodule BlockScoutWeb.BlockTransactionController do
           "index.html",
           block: block,
           block_transaction_count: block_transaction_count,
-          current_path: current_path(conn)
+          current_path: Controller.current_full_path(conn)
         )
 
       {:error, {:invalid, :hash}} ->
@@ -121,7 +133,7 @@ defmodule BlockScoutWeb.BlockTransactionController do
     end
   end
 
-  defp param_block_hash_or_number_to_block("0x" <> _ = param, options) do
+  def param_block_hash_or_number_to_block("0x" <> _ = param, options) do
     case string_to_block_hash(param) do
       {:ok, hash} ->
         hash_to_block(hash, options)
@@ -131,8 +143,8 @@ defmodule BlockScoutWeb.BlockTransactionController do
     end
   end
 
-  defp param_block_hash_or_number_to_block(number_string, options)
-       when is_binary(number_string) do
+  def param_block_hash_or_number_to_block(number_string, options)
+      when is_binary(number_string) do
     case BlockScoutWeb.Chain.param_to_block_number(number_string) do
       {:ok, number} ->
         number_to_block(number, options)

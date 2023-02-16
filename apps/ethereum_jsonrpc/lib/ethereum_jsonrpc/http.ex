@@ -3,7 +3,7 @@ defmodule EthereumJSONRPC.HTTP do
   JSONRPC over HTTP
   """
 
-  alias EthereumJSONRPC.Transport
+  alias EthereumJSONRPC.{DecodeError, Transport}
 
   require Logger
 
@@ -114,7 +114,17 @@ defmodule EthereumJSONRPC.HTTP do
           {:error, {:bad_gateway, request_url}}
 
         _ ->
-          raise EthereumJSONRPC.DecodeError, named_arguments
+          named_arguments
+          |> DecodeError.exception()
+          |> DecodeError.message()
+          |> Logger.error()
+
+          request_url =
+            named_arguments
+            |> Keyword.fetch!(:request)
+            |> Keyword.fetch!(:url)
+
+          {:error, {:bad_response, request_url}}
       end
     end
   end
@@ -141,9 +151,7 @@ defmodule EthereumJSONRPC.HTTP do
     case unstandardized do
       %{"result" => _, "error" => _} ->
         raise ArgumentError,
-              "result and error keys are mutually exclusive in JSONRPC 2.0 response objects, but got #{
-                inspect(unstandardized)
-              }"
+              "result and error keys are mutually exclusive in JSONRPC 2.0 response objects, but got #{inspect(unstandardized)}"
 
       %{"result" => result} ->
         Map.put(standardized, :result, result)

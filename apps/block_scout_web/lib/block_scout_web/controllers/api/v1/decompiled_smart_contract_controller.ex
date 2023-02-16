@@ -1,10 +1,13 @@
 defmodule BlockScoutWeb.API.V1.DecompiledSmartContractController do
   use BlockScoutWeb, :controller
 
+  alias BlockScoutWeb.API.APILogger
   alias Explorer.Chain
   alias Explorer.Chain.Hash.Address
 
   def create(conn, params) do
+    APILogger.log(conn)
+
     if auth_token(conn) == actual_token() do
       with {:ok, hash} <- validate_address_hash(params["address_hash"]),
            :ok <- Chain.check_address_exists(hash),
@@ -12,7 +15,7 @@ defmodule BlockScoutWeb.API.V1.DecompiledSmartContractController do
              {:contract, Chain.check_decompiled_contract_exists(params["address_hash"], params["decompiler_version"])} do
         case Chain.create_decompiled_smart_contract(params) do
           {:ok, decompiled_smart_contract} ->
-            send_resp(conn, :created, Jason.encode!(decompiled_smart_contract))
+            send_resp(conn, :created, encode(decompiled_smart_contract))
 
           {:error, changeset} ->
             errors =

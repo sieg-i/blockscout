@@ -34,9 +34,6 @@ $card-tab-icon-color-active: #fff !default;
 .card-background-1 {
   background-color: $card-background-1;
   color: $card-background-1-text-color;
-  @include media-breakpoint-down(sm) {
-    margin-left: 15px;
-  }
   a:not(.dropdown-item),
   a:not(.dropdown-item):hover {
     color: $card-background-1-text-color;
@@ -112,6 +109,21 @@ $card-tab-icon-color-active: #fff !default;
   @include media-breakpoint-down(sm) {
     flex-direction: column;
   }
+}
+
+.card-title-paging {
+  padding: 0px $card-horizontal-padding;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 54px;
+}
+
+.card-footer-paging {
+  padding: 0px $card-horizontal-padding;
+  padding-bottom: 25px;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 80px;
 }
 
 .card-title-controls {
@@ -258,6 +270,10 @@ $card-tab-icon-color-active: #fff !default;
   } 
 }
 
+.implementation-container {
+  margin-top: 10px;
+}
+
 .implementation-title {
   float: left;
   margin-right: 5px;
@@ -265,4 +281,67 @@ $card-tab-icon-color-active: #fff !default;
 
 .implementation-value {
   line-height: 30px;
+}
+
+.connect-container {
+  display: flex;
+  line-height: 36px;
+}
+
+.write-contract-btn {
+  padding: 6px 8px !important;
+  height: 31px !important;
+  font-size: 11px;
+}
+
+.contract-plus-btn-container {
+  height: 31px !important;
+  &:hover i {
+    color: #fff !important;
+  }
+}
+
+.contract-plus-btn {
+  color: $primary;
+  font-size: 15px;
+}
+
+.custom-power-input {
+  height: 20px;
+  width: 50px !important;
+  margin-top: -10px !important;
+}
+
+.list-title-description {
+  @media (min-width: 992px) {
+    display: inline-block;
+  }
+}
+
+.list-top-pagination-container-wrapper {
+  @media (min-width: 992px) {
+    float: right;
+  }
+}
+
+.function-output {
+  margin-left: -1rem;
+}
+
+.functions-tabs input[type="radio"] {
+  display: none;
+}
+
+.card-misc-container {
+  padding-left: $card-horizontal-padding;
+  padding-top: $card-horizontal-padding;
+
+  .btn-line-inversed,
+  .btn-line {
+    display: inline-flex;
+  }
+}
+
+.nav-pills .nav-link.active {
+  background-color: $primary;
 }

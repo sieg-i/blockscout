@@ -5,12 +5,14 @@ defmodule EthereumJSONRPC.GethTest do
 
   alias EthereumJSONRPC.Geth
 
-  @moduletag :no_parity
+  @moduletag :no_nethermind
 
   describe "fetch_internal_transactions/2" do
     # Infura Mainnet does not support debug_traceTransaction, so this cannot be tested expect in Mox
     setup do
       EthereumJSONRPC.Case.Geth.Mox.setup()
+      initial_env = Application.get_all_env(:ethereum_jsonrpc)
+      on_exit(fn -> Application.put_all_env([{:ethereum_jsonrpc, initial_env}]) end)
     end
 
     setup :verify_on_exit!
@@ -45,6 +47,8 @@ defmodule EthereumJSONRPC.GethTest do
          ]}
       end)
 
+      Application.put_env(:ethereum_jsonrpc, Geth, tracer: "js")
+
       assert {:ok,
               [
                 %{
@@ -74,6 +78,361 @@ defmodule EthereumJSONRPC.GethTest do
                  ],
                  json_rpc_named_arguments
                )
+    end
+
+    test "call_tracer contract calls results are the same as js tracer", %{
+      json_rpc_named_arguments: json_rpc_named_arguments
+    } do
+      transaction_hash = "0xb342cafc6ac552c3be2090561453204c8784caf025ac8267320834e4cd163d96"
+      block_number = 3_287_375
+      transaction_index = 13
+
+      transaction_params = %{
+        block_number: block_number,
+        transaction_index: transaction_index,
+        hash_data: transaction_hash
+      }
+
+      tracer = File.read!("priv/js/ethereum_jsonrpc/geth/debug_traceTransaction/tracer.js")
+
+      expect(EthereumJSONRPC.Mox, :json_rpc, 1, fn
+        [%{id: id, params: [^transaction_hash, %{tracer: "callTracer"}]}], _ ->
+          {:ok,
+           [
+             %{
+               id: id,
+               result: %{
+                 "calls" => [
+                   %{
+                     "calls" => [
+                       %{
+                         "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "gas" => "0x12816",
+                         "gasUsed" => "0x229e",
+                         "input" =>
+                           "0xa9059cbb0000000000000000000000009507c04b10486547584c37bcbd931b2a4fee9a4100000000000000000000000000000000000000000000000322a0aedb1fe2c7e6",
+                         "output" => "0x",
+                         "to" => "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                         "type" => "CALL",
+                         "value" => "0x0"
+                       },
+                       %{
+                         "calls" => [
+                           %{
+                             "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                             "gas" => "0xfbb8",
+                             "gasUsed" => "0x211",
+                             "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                             "output" => "0x",
+                             "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                             "type" => "DELEGATECALL"
+                           }
+                         ],
+                         "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "gas" => "0x1029c",
+                         "gasUsed" => "0x523",
+                         "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "output" => "0x",
+                         "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                         "type" => "STATICCALL"
+                       },
+                       %{
+                         "calls" => [
+                           %{
+                             "calls" => [
+                               %{
+                                 "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                                 "gas" => "0xe3e3",
+                                 "gasUsed" => "0x259c",
+                                 "input" =>
+                                   "0xa9059cbb00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f564000000000000000000000000000000000000000000000000000000014e53ad37c",
+                                 "output" => "0x",
+                                 "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                                 "type" => "DELEGATECALL"
+                               }
+                             ],
+                             "from" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                             "gas" => "0xea6a",
+                             "gasUsed" => "0x28b1",
+                             "input" =>
+                               "0xa9059cbb00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f564000000000000000000000000000000000000000000000000000000014e53ad37c",
+                             "output" => "0x",
+                             "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                             "type" => "CALL",
+                             "value" => "0x0"
+                           }
+                         ],
+                         "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "gas" => "0xfa71",
+                         "gasUsed" => "0x3627",
+                         "input" =>
+                           "0xfa461e3300000000000000000000000000000000000000000000000000000014e53ad37cfffffffffffffffffffffffffffffffffffffffffffffffcdd5f5124e01d381a000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000014e53ad37c00000000000000000000000000000000000000000000000322a0aedb1fe2c7e600000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000",
+                         "output" => "0x",
+                         "to" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                         "type" => "CALL",
+                         "value" => "0x0"
+                       },
+                       %{
+                         "calls" => [
+                           %{
+                             "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                             "gas" => "0xbcc4",
+                             "gasUsed" => "0x211",
+                             "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                             "output" => "0x",
+                             "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                             "type" => "DELEGATECALL"
+                           }
+                         ],
+                         "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "gas" => "0xc2a9",
+                         "gasUsed" => "0x523",
+                         "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                         "output" => "0x",
+                         "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                         "type" => "STATICCALL"
+                       }
+                     ],
+                     "from" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                     "gas" => "0x185b2",
+                     "gasUsed" => "0xd38e",
+                     "input" =>
+                       "0x128acb080000000000000000000000009507c04b10486547584c37bcbd931b2a4fee9a410000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffcdd5f5124e01d381a00000000000000000000000000000000000000000000000000000001000276a400000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000014e53ad37c00000000000000000000000000000000000000000000000322a0aedb1fe2c7e600000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000",
+                     "output" => "0x",
+                     "to" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                     "type" => "CALL",
+                     "value" => "0x0"
+                   }
+                 ],
+                 "from" => "0x56d0c33e5e8cb6390cebd7369d2fe7e7870a04e0",
+                 "gas" => "0x1a8c6",
+                 "gasUsed" => "0xf1f6",
+                 "input" =>
+                   "0x33000000000000000014e53ad37c0000000322a0aedb1fe2c7e6010201f4ff010088e6a0c2ddd26feeb64f039a2c41296fcb3f5640a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48c02aaa39b223fe8d0a0e5c4f27ead9083c756cc203",
+                 "output" => "0x",
+                 "time" => "48.391824ms",
+                 "to" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                 "type" => "CALL",
+                 "value" => "0xfa72c6"
+               }
+             }
+           ]}
+      end)
+
+      expect(EthereumJSONRPC.Mox, :json_rpc, 1, fn
+        [%{id: id, params: [^transaction_hash, %{tracer: ^tracer}]}], _ ->
+          {:ok,
+           [
+             %{
+               id: id,
+               result: [
+                 %{
+                   "callType" => "call",
+                   "from" => "0x56d0c33e5e8cb6390cebd7369d2fe7e7870a04e0",
+                   "gas" => "0x1a8c6",
+                   "gasUsed" => "0xf1f6",
+                   "input" =>
+                     "0x33000000000000000014e53ad37c0000000322a0aedb1fe2c7e6010201f4ff010088e6a0c2ddd26feeb64f039a2c41296fcb3f5640a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48c02aaa39b223fe8d0a0e5c4f27ead9083c756cc203",
+                   "output" => "0x",
+                   "to" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                   "traceAddress" => [],
+                   "type" => "call",
+                   "value" => "0xfa72c6"
+                 },
+                 %{
+                   "callType" => "call",
+                   "from" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                   "gas" => "0x185b2",
+                   "gasUsed" => "0xd38e",
+                   "input" =>
+                     "0x128acb080000000000000000000000009507c04b10486547584c37bcbd931b2a4fee9a410000000000000000000000000000000000000000000000000000000000000001fffffffffffffffffffffffffffffffffffffffffffffffcdd5f5124e01d381a00000000000000000000000000000000000000000000000000000001000276a400000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000014e53ad37c00000000000000000000000000000000000000000000000322a0aedb1fe2c7e600000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000",
+                   "output" => "0x",
+                   "to" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "traceAddress" => [0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "call",
+                   "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "gas" => "0x12816",
+                   "gasUsed" => "0x229e",
+                   "input" =>
+                     "0xa9059cbb0000000000000000000000009507c04b10486547584c37bcbd931b2a4fee9a4100000000000000000000000000000000000000000000000322a0aedb1fe2c7e6",
+                   "output" => "0x",
+                   "to" => "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                   "traceAddress" => [0, 0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "staticcall",
+                   "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "gas" => "0x1029c",
+                   "gasUsed" => "0x523",
+                   "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "output" => "0x",
+                   "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "traceAddress" => [0, 1],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "delegatecall",
+                   "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "gas" => "0xfbb8",
+                   "gasUsed" => "0x211",
+                   "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "output" => "0x",
+                   "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                   "traceAddress" => [0, 1, 0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "call",
+                   "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "gas" => "0xfa71",
+                   "gasUsed" => "0x3627",
+                   "input" =>
+                     "0xfa461e3300000000000000000000000000000000000000000000000000000014e53ad37cfffffffffffffffffffffffffffffffffffffffffffffffcdd5f5124e01d381a000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f400000000000000000000000000000000000000000000000000000014e53ad37c00000000000000000000000000000000000000000000000322a0aedb1fe2c7e600000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000",
+                   "output" => "0x",
+                   "to" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                   "traceAddress" => [0, 2],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "call",
+                   "from" => "0x9507c04b10486547584c37bcbd931b2a4fee9a41",
+                   "gas" => "0xea6a",
+                   "gasUsed" => "0x28b1",
+                   "input" =>
+                     "0xa9059cbb00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f564000000000000000000000000000000000000000000000000000000014e53ad37c",
+                   "output" => "0x",
+                   "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "traceAddress" => [0, 2, 0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "delegatecall",
+                   "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "gas" => "0xe3e3",
+                   "gasUsed" => "0x259c",
+                   "input" =>
+                     "0xa9059cbb00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f564000000000000000000000000000000000000000000000000000000014e53ad37c",
+                   "output" => "0x",
+                   "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                   "traceAddress" => [0, 2, 0, 0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "staticcall",
+                   "from" => "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "gas" => "0xc2a9",
+                   "gasUsed" => "0x523",
+                   "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "output" => "0x",
+                   "to" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "traceAddress" => [0, 3],
+                   "type" => "call",
+                   "value" => "0x0"
+                 },
+                 %{
+                   "callType" => "delegatecall",
+                   "from" => "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                   "gas" => "0xbcc4",
+                   "gasUsed" => "0x211",
+                   "input" => "0x70a0823100000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                   "output" => "0x",
+                   "to" => "0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf",
+                   "traceAddress" => [0, 3, 0],
+                   "type" => "call",
+                   "value" => "0x0"
+                 }
+               ]
+             }
+           ]}
+      end)
+
+      call_tracer_internal_txs = Geth.fetch_internal_transactions([transaction_params], json_rpc_named_arguments)
+
+      Application.put_env(:ethereum_jsonrpc, Geth, tracer: "js")
+
+      assert call_tracer_internal_txs ==
+               Geth.fetch_internal_transactions([transaction_params], json_rpc_named_arguments)
+    end
+
+    test "call_tracer contract creation results are the same as js tracer", %{
+      json_rpc_named_arguments: json_rpc_named_arguments
+    } do
+      transaction_hash = "0xb342cafc6ac552c3be2090561453204c8784caf025ac8267320834e4cd163d96"
+      block_number = 3_287_375
+      transaction_index = 13
+
+      transaction_params = %{
+        block_number: block_number,
+        transaction_index: transaction_index,
+        hash_data: transaction_hash
+      }
+
+      tracer = File.read!("priv/js/ethereum_jsonrpc/geth/debug_traceTransaction/tracer.js")
+
+      expect(EthereumJSONRPC.Mox, :json_rpc, 1, fn
+        [%{id: id, params: [^transaction_hash, %{tracer: "callTracer"}]}], _ ->
+          {:ok,
+           [
+             %{
+               id: id,
+               result: %{
+                 "type" => "CREATE",
+                 "from" => "0x117b358218da5a4f647072ddb50ded038ed63d17",
+                 "to" => "0x205a6b72ce16736c9d87172568a9c0cb9304de0d",
+                 "value" => "0x0",
+                 "gas" => "0x106f5",
+                 "gasUsed" => "0x106f5",
+                 "input" =>
+                   "0x608060405234801561001057600080fd5b50610150806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80632e64cec11461003b5780636057361d14610059575b600080fd5b610043610075565b60405161005091906100d9565b60405180910390f35b610073600480360381019061006e919061009d565b61007e565b005b60008054905090565b8060008190555050565b60008135905061009781610103565b92915050565b6000602082840312156100b3576100b26100fe565b5b60006100c184828501610088565b91505092915050565b6100d3816100f4565b82525050565b60006020820190506100ee60008301846100ca565b92915050565b6000819050919050565b600080fd5b61010c816100f4565b811461011757600080fd5b5056fea26469706673582212209a159a4f3847890f10bfb87871a61eba91c5dbf5ee3cf6398207e292eee22a1664736f6c63430008070033",
+                 "output" =>
+                   "0x608060405234801561001057600080fd5b50600436106100365760003560e01c80632e64cec11461003b5780636057361d14610059575b600080fd5b610043610075565b60405161005091906100d9565b60405180910390f35b610073600480360381019061006e919061009d565b61007e565b005b60008054905090565b8060008190555050565b60008135905061009781610103565b92915050565b6000602082840312156100b3576100b26100fe565b5b60006100c184828501610088565b91505092915050565b6100d3816100f4565b82525050565b60006020820190506100ee60008301846100ca565b92915050565b6000819050919050565b600080fd5b61010c816100f4565b811461011757600080fd5b5056fea26469706673582212209a159a4f3847890f10bfb87871a61eba91c5dbf5ee3cf6398207e292eee22a1664736f6c63430008070033"
+               }
+             }
+           ]}
+      end)
+
+      expect(EthereumJSONRPC.Mox, :json_rpc, 1, fn
+        [%{id: id, params: [^transaction_hash, %{tracer: ^tracer}]}], _ ->
+          {:ok,
+           [
+             %{
+               id: id,
+               result: [
+                 %{
+                   "type" => "create",
+                   "from" => "0x117b358218da5a4f647072ddb50ded038ed63d17",
+                   "init" =>
+                     "0x608060405234801561001057600080fd5b50610150806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80632e64cec11461003b5780636057361d14610059575b600080fd5b610043610075565b60405161005091906100d9565b60405180910390f35b610073600480360381019061006e919061009d565b61007e565b005b60008054905090565b8060008190555050565b60008135905061009781610103565b92915050565b6000602082840312156100b3576100b26100fe565b5b60006100c184828501610088565b91505092915050565b6100d3816100f4565b82525050565b60006020820190506100ee60008301846100ca565b92915050565b6000819050919050565b600080fd5b61010c816100f4565b811461011757600080fd5b5056fea26469706673582212209a159a4f3847890f10bfb87871a61eba91c5dbf5ee3cf6398207e292eee22a1664736f6c63430008070033",
+                   "createdContractAddressHash" => "0x205a6b72ce16736c9d87172568a9c0cb9304de0d",
+                   "createdContractCode" =>
+                     "0x608060405234801561001057600080fd5b50600436106100365760003560e01c80632e64cec11461003b5780636057361d14610059575b600080fd5b610043610075565b60405161005091906100d9565b60405180910390f35b610073600480360381019061006e919061009d565b61007e565b005b60008054905090565b8060008190555050565b60008135905061009781610103565b92915050565b6000602082840312156100b3576100b26100fe565b5b60006100c184828501610088565b91505092915050565b6100d3816100f4565b82525050565b60006020820190506100ee60008301846100ca565b92915050565b6000819050919050565b600080fd5b61010c816100f4565b811461011757600080fd5b5056fea26469706673582212209a159a4f3847890f10bfb87871a61eba91c5dbf5ee3cf6398207e292eee22a1664736f6c63430008070033",
+                   "traceAddress" => [],
+                   "value" => "0x0",
+                   "gas" => "0x106f5",
+                   "gasUsed" => "0x106f5"
+                 }
+               ]
+             }
+           ]}
+      end)
+
+      call_tracer_internal_txs = Geth.fetch_internal_transactions([transaction_params], json_rpc_named_arguments)
+
+      Application.put_env(:ethereum_jsonrpc, Geth, tracer: "js")
+
+      assert call_tracer_internal_txs ==
+               Geth.fetch_internal_transactions([transaction_params], json_rpc_named_arguments)
     end
   end
 
@@ -157,7 +516,7 @@ defmodule EthereumJSONRPC.GethTest do
                   gas: 4_000_000,
                   gas_price: 1_000_000_000,
                   hash: "0x2b8cfd76a31b942e51b6265c791c860e2840b11f8c2fcfa1c9dfe53dea4c3102",
-                  index: 0,
+                  index: nil,
                   input:
                     "0xc47e300d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000030af6932dec7c4eaf4b966059e74cc7a1767ba93e62f2d83a7dba5bb785b6efd25e8ab7d2e8798e7ecc27df96380d77a0400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000b29e5229b86fbb3a8e45e406b64226c3d49389804a6f7449325fae232d6623000000000000000000000000000000000000000000000000000000000000006097e4c1ed443f430b1d8ad66e565a960fade76e3e177b4120186bdad2fcfa43e134de3abdc0272c9433af94833fec73260c261cf41422e83d958787b62144478bc44ab84d1ddba7a462d355057f3be8ab914a195ac1a637c4fb8503c441dadb45",
                   nonce: 4656,
@@ -177,7 +536,7 @@ defmodule EthereumJSONRPC.GethTest do
                   gas: 4_000_000,
                   gas_price: 1_000_000_000,
                   hash: "0x7c3ea924740e996bf552a8dded903ba4258b69d30bf5e6dca6ec86ebc60b8151",
-                  index: 0,
+                  index: nil,
                   input:
                     "0xc47e300d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000030a25723bca32f88a73abc7eb153cee248effd563d87efe12e08e8a33f74047afc28c30ab9c74bddeb6f0558628b8bf200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020009c56025b2796cdc72f91836278a471590b774462adddd1c87a0b6f84b787990000000000000000000000000000000000000000000000000000000000000060aa53b46c8b57aed7c4c0fdf3f650ec3bb330591929bc813610656882e3203157c22b50d0d0b0316a8712c00fe4f0e0c509613114f5d24c0419a4e8188f2489678b05dccf72a67957785e8e250092c8787f049f7e20b1414a633595a56c98ff82",
                   nonce: 4657,
@@ -197,7 +556,7 @@ defmodule EthereumJSONRPC.GethTest do
                   gas: 4_000_000,
                   gas_price: 1_000_000_000,
                   hash: "0xe699a58ef4986f2dbdc102acf73b35392aff9ce43fd226000526955e19c0b06e",
-                  index: 0,
+                  index: nil,
                   input:
                     "0xc47e300d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000308eb3ed9e686f6bc1fe2d8ce3fea37fb3a66a9c67b91ef15ba6bd7da0eed73288f72577edea2b7ded5855ca8a56b1e01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000051afe6c51e2175a62afbd66d293e8a7509943d5cd6f851f59923a61a186e80000000000000000000000000000000000000000000000000000000000000060a063498e8db2e75e0a193de89ad2947111d677c9501e75c34a64fcee8fe5a7c7607929fc6bce943d64f1039e1d1f325f02d1e5d71f86ca976c9ab79d19f0fd0e530a5210fbe131087ba1f1b3c92abc4a0dd7c8a47c3c276fac3e09bca964fd74",
                   nonce: 4658,

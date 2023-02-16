@@ -6,7 +6,7 @@ defmodule BlockScoutWeb.AddressControllerTest do
   import Mox
 
   alias Explorer.Chain.Address
-  alias Explorer.Counters.AddressesCounter
+  alias Explorer.Counters.{AddressesCounter}
 
   describe "GET index/2" do
     setup :set_mox_global
@@ -72,20 +72,26 @@ defmodule BlockScoutWeb.AddressControllerTest do
 
       conn = get(conn, "/address/0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed")
 
-      assert redirected_to(conn) =~ "/address/0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed/transactions"
+      assert html_response(conn, 200)
     end
   end
 
-  describe "GET address_counters/2" do
+  describe "GET address-counters/2" do
     test "returns address counters", %{conn: conn} do
       address = insert(:address)
 
-      conn = get(conn, "/address_counters", %{"id" => Address.checksum(address.hash)})
+      conn = get(conn, "/address-counters", %{"id" => Address.checksum(address.hash)})
 
       assert conn.status == 200
       {:ok, response} = Jason.decode(conn.resp_body)
 
-      assert %{"transaction_count" => 0, "validation_count" => 0} == response
+      assert %{
+               "transaction_count" => 0,
+               "token_transfer_count" => 0,
+               "validation_count" => 0,
+               "gas_usage_count" => 0
+             } ==
+               response
     end
   end
 end

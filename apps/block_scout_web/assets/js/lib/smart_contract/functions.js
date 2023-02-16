@@ -1,12 +1,10 @@
 import $ from 'jquery'
-import ethNetProps from 'eth-net-props'
-import { walletEnabled, getCurrentAccount } from './write.js'
-import { openErrorModal, openWarningModal, openSuccessModal, openModalWithMessage } from '../modals.js'
+import { connectSelector, disconnectSelector, getCurrentAccountPromise, getContractABI, getMethodInputs, prepareMethodArgs } from './common_helpers'
+import { queryMethod, callMethod } from './interact'
+import { walletEnabled, connectToWallet, disconnectWallet, web3ModalInit } from './connect.js'
 import '../../pages/address'
 
-const WEI_MULTIPLIER = 10 ** 18
-
-const loadFunctions = (element) => {
+const loadFunctions = (element, isCustomABI, from) => {
   const $element = $(element)
   const url = $element.data('url')
   const hash = $element.data('hash')
@@ -15,12 +13,40 @@ const loadFunctions = (element) => {
 
   $.get(
     url,
-    { hash: hash, type: type, action: action },
+    { hash, type, action, is_custom_abi: isCustomABI, from },
     response => $element.html(response)
   )
     .done(function () {
-      $('[data-function]').each((_, element) => {
+      const connectSelectorObj = document.querySelector(connectSelector)
+      connectSelectorObj && connectSelectorObj.addEventListener('click', connectToWallet)
+      const disconnectSelectorObj = document.querySelector(disconnectSelector)
+      disconnectSelectorObj && disconnectSelectorObj.addEventListener('click', disconnectWallet)
+      web3ModalInit(connectToWallet)
+
+      const selector = isCustomABI ? '[data-function-custom]' : '[data-function]'
+
+      $(selector).each((_, element) => {
         readWriteFunction(element)
+      })
+
+      $('.contract-exponentiation-btn').on('click', (event) => {
+        const $customPower = $(event.currentTarget).find('[name=custom_power]')
+        let power
+        if ($customPower.length > 0) {
+          // @ts-ignore
+          power = parseInt($customPower.val(), 10)
+        } else {
+          power = parseInt($(event.currentTarget).data('power'), 10)
+        }
+        const $input = $(event.currentTarget).parent().parent().parent().find('[name=function_input]')
+        // @ts-ignore
+        const currentInputVal = parseInt($input.val(), 10) || 1
+        const newInputVal = (currentInputVal * Math.pow(10, power)).toString()
+        $input.val(newInputVal.toString())
+      })
+
+      $('[name=custom_power]').on('click', (event) => {
+        $(event.currentTarget).parent().parent().toggleClass('show')
       })
     })
     .fail(function (response) {
@@ -35,108 +61,58 @@ const readWriteFunction = (element) => {
   const $responseContainer = $element.find('[data-function-response]')
 
   $form.on('submit', (event) => {
-    const action = $form.data('action')
     event.preventDefault()
+    const action = $form.data('action')
+    const $errorContainer = $form.parent().find('[input-parse-error-container]')
+
+    $errorContainer.hide()
+
+    const $functionInputs = $form.find('input[name=function_input]')
+    const $functionName = $form.find('input[name=function_name]')
+    const functionName = $functionName && $functionName.val()
 
     if (action === 'read') {
       const url = $form.data('url')
-      const $functionName = $form.find('input[name=function_name]')
-      const $functionInputs = $form.find('input[name=function_input]')
 
-      const args = $.map($functionInputs, element => {
-        return $(element).val()
-      })
-
-      const data = {
-        function_name: $functionName.val(),
-        args
+      const contractAbi = getContractABI($form)
+      const inputs = getMethodInputs(contractAbi, functionName)
+      const $methodId = $form.find('input[name=method_id]')
+      try {
+        var args = prepareMethodArgs($functionInputs, inputs)
+      } catch (exception) {
+        $errorContainer.show()
+        $errorContainer.text(exception)
+        return
       }
+      const type = $('[data-smart-contract-functions]').data('type')
+      const isCustomABI = $form.data('custom-abi')
 
-      $.get(url, data, response => $responseContainer.html(response))
-    } else if (action === 'write') {
-      const chainId = $form.data('chainId')
       walletEnabled()
-        .then((isWalletEnabled) => {
-          if (isWalletEnabled) {
-            const functionName = $form.find('input[name=function_name]').val()
-
-            const $functionInputs = $form.find('input[name=function_input]')
-            const $functionInputsExceptTxValue = $functionInputs.filter(':not([tx-value])')
-            const args = $.map($functionInputsExceptTxValue, element => $(element).val())
-
-            const $txValue = $functionInputs.filter('[tx-value]:first')
-
-            const txValue = $txValue && $txValue.val() && parseFloat($txValue.val()) * WEI_MULTIPLIER
-
-            const contractAddress = $form.data('contract-address')
-            const implementationAbi = $form.data('implementation-abi')
-            const parentAbi = $form.data('contract-abi')
-            const $parent = $('[data-smart-contract-functions]')
-            const contractType = $parent.data('type')
-            const contractAbi = contractType === 'proxy' ? implementationAbi : parentAbi
-
-            window.web3.eth.getChainId()
-              .then(chainIdFromWallet => {
-                if (chainId !== chainIdFromWallet) {
-                  const networkDisplayNameFromWallet = ethNetProps.props.getNetworkDisplayName(chainIdFromWallet)
-                  const networkDisplayName = ethNetProps.props.getNetworkDisplayName(chainId)
-                  return Promise.reject(new Error(`You connected to ${networkDisplayNameFromWallet} chain in the wallet, but the current instance of Blockscout is for ${networkDisplayName} chain`))
-                } else {
-                  return getCurrentAccount()
-                }
-              })
-              .then(currentAccount => {
-                let methodToCall
-
-                if (functionName) {
-                  const TargetContract = new window.web3.eth.Contract(contractAbi, contractAddress)
-                  methodToCall = TargetContract.methods[functionName](...args).send({ from: currentAccount, value: txValue || 0 })
-                } else {
-                  const txParams = {
-                    from: currentAccount,
-                    to: contractAddress,
-                    value: txValue || 0
-                  }
-                  methodToCall = window.web3.eth.sendTransaction(txParams)
-                }
-
-                methodToCall
-                  .on('error', function (error) {
-                    openErrorModal(`Error in sending transaction for method "${functionName}"`, formatError(error), false)
-                  })
-                  .on('transactionHash', function (txHash) {
-                    openModalWithMessage($element.find('#pending-contract-write'), true, txHash)
-                    const getTxReceipt = (txHash) => {
-                      window.web3.eth.getTransactionReceipt(txHash)
-                        .then(txReceipt => {
-                          if (txReceipt) {
-                            openSuccessModal('Success', `Successfully sent <a href="/tx/${txHash}">transaction</a> for method "${functionName}"`)
-                            clearInterval(txReceiptPollingIntervalId)
-                          }
-                        })
-                    }
-                    const txReceiptPollingIntervalId = setInterval(() => { getTxReceipt(txHash) }, 5 * 1000)
-                  })
-              })
-              .catch(error => {
-                openWarningModal('Unauthorized', formatError(error))
-              })
-          } else {
-            openWarningModal('Unauthorized', 'You haven\'t approved the reading of account list from your MetaMask or MetaMask/Nifty wallet is locked or is not installed.')
-          }
-        })
+        .then((isWalletEnabled) => queryMethod(isWalletEnabled, url, $methodId, args, type, functionName, $responseContainer, isCustomABI))
+    } else if (action === 'write') {
+      const explorerChainId = $form.data('chainId')
+      walletEnabled()
+        .then((isWalletEnabled) => callMethod(isWalletEnabled, $functionInputs, explorerChainId, $form, functionName, $element))
     }
   })
-}
-
-const formatError = (error) => {
-  let { message } = error
-  message = message && message.split('Error: ').length > 1 ? message.split('Error: ')[1] : message
-  return message
 }
 
 const container = $('[data-smart-contract-functions]')
 
 if (container.length) {
-  loadFunctions(container)
+  getWalletAndLoadFunctions()
+}
+
+const customABIContainer = $('[data-smart-contract-functions-custom]')
+
+if (customABIContainer.length) {
+  getWalletAndLoadFunctions()
+}
+
+function getWalletAndLoadFunctions () {
+  getCurrentAccountPromise(window.web3 && window.web3.currentProvider).then((currentAccount) => {
+    loadFunctions(container, false, currentAccount)
+  }, () => {
+    loadFunctions(container, false, null)
+  })
 }

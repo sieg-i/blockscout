@@ -1,12 +1,16 @@
 defmodule BlockScoutWeb.Tokens.Instance.OverviewView do
   use BlockScoutWeb, :view
 
-  alias BlockScoutWeb.CurrencyHelpers
+  alias BlockScoutWeb.{CurrencyHelpers, NFTHelpers}
+  alias Explorer.Chain
   alias Explorer.Chain.{Address, SmartContract, Token}
+  alias Explorer.SmartContract.Helper
 
   import BlockScoutWeb.APIDocsView, only: [blockscout_url: 1, blockscout_url: 2]
+  import BlockScoutWeb.NFTHelpers, only: [external_url: 1]
 
-  @tabs ["token_transfers", "metadata"]
+  @tabs ["token-transfers", "metadata"]
+  @stub_image "/images/controller.svg"
 
   def token_name?(%Token{name: nil}), do: false
   def token_name?(%Token{name: _}), do: true
@@ -17,26 +21,59 @@ defmodule BlockScoutWeb.Tokens.Instance.OverviewView do
   def total_supply?(%Token{total_supply: nil}), do: false
   def total_supply?(%Token{total_supply: _}), do: true
 
-  def image_src(nil), do: "/images/controller.svg"
+  def media_src(instance, high_quality_media? \\ nil)
+  def media_src(nil, _), do: @stub_image
 
-  def image_src(instance) do
-    result =
-      cond do
-        instance.metadata && instance.metadata["image_url"] ->
-          instance.metadata["image_url"]
+  def media_src(instance, high_quality_media?) do
+    NFTHelpers.get_media_src(instance.metadata, high_quality_media?) || media_src(nil)
+  end
 
-        instance.metadata && instance.metadata["image"] ->
-          retrieve_image(instance.metadata["image"])
+  def media_type("data:image/" <> _data) do
+    "image"
+  end
 
-        instance.metadata && instance.metadata["properties"]["image"]["description"] ->
-          instance.metadata["properties"]["image"]["description"]
+  def media_type("data:video/" <> _data) do
+    "video"
+  end
 
-        true ->
-          image_src(nil)
+  def media_type("data:" <> _data) do
+    nil
+  end
+
+  def media_type(media_src) when not is_nil(media_src) do
+    ext = media_src |> Path.extname() |> String.trim()
+
+    mime_type =
+      if ext == "" do
+        case HTTPoison.head(media_src, [], follow_redirect: true) do
+          {:ok, %HTTPoison.Response{status_code: 200, headers: headers}} ->
+            headers_map = Map.new(headers, fn {key, value} -> {String.downcase(key), value} end)
+            headers_map["content-type"]
+
+          _ ->
+            nil
+        end
+      else
+        ext_with_dot =
+          media_src
+          |> Path.extname()
+
+        "." <> ext = ext_with_dot
+
+        ext
+        |> MIME.type()
       end
 
-    if String.trim(result) == "", do: image_src(nil), else: result
+    if mime_type do
+      basic_mime_type = mime_type |> String.split("/") |> Enum.at(0)
+
+      basic_mime_type
+    else
+      nil
+    end
   end
+
+  def media_type(nil), do: nil
 
   def total_supply_usd(token) do
     tokens = CurrencyHelpers.divide_decimals(token.total_supply, token.decimals)
@@ -47,7 +84,7 @@ defmodule BlockScoutWeb.Tokens.Instance.OverviewView do
   def smart_contract_with_read_only_functions?(
         %Token{contract_address: %Address{smart_contract: %SmartContract{}}} = token
       ) do
-    Enum.any?(token.contract_address.smart_contract.abi, &(&1["constant"] || &1["stateMutability"] == "view"))
+    Enum.any?(token.contract_address.smart_contract.abi || [], &Helper.queriable_method?(&1))
   end
 
   def smart_contract_with_read_only_functions?(%Token{contract_address: %Address{smart_contract: nil}}), do: false
@@ -87,14 +124,6 @@ defmodule BlockScoutWeb.Tokens.Instance.OverviewView do
     |> tab_name()
   end
 
-  defp retrieve_image(image) when is_map(image) do
-    image["description"]
-  end
-
-  defp retrieve_image(image) do
-    image
-  end
-
-  defp tab_name(["token_transfers"]), do: gettext("Token Transfers")
+  defp tab_name(["token-transfers"]), do: gettext("Token Transfers")
   defp tab_name(["metadata"]), do: gettext("Metadata")
 end

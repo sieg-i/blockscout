@@ -281,16 +281,18 @@ defmodule Explorer.SmartContract.WriterTest do
 
   describe "write_functions_proxy/1" do
     test "fetches the smart contract proxy write functions" do
-      proxy_smart_contract =
+      _proxy_smart_contract =
         insert(:smart_contract,
-          abi: @abi
+          abi: @abi,
+          contract_code_md5: "123"
         )
 
       implementation_contract_address = insert(:contract_address)
 
       insert(:smart_contract,
         address_hash: implementation_contract_address.hash,
-        abi: @implementation_abi
+        abi: @implementation_abi,
+        contract_code_md5: "123"
       )
 
       implementation_contract_address_hash_string =

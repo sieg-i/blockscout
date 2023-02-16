@@ -177,6 +177,12 @@ defmodule Explorer.Chain.Wei do
     |> from(:wei)
   end
 
+  def mult(%Wei{value: value}, %Decimal{} = multiplier) do
+    value
+    |> Decimal.mult(multiplier)
+    |> from(:wei)
+  end
+
   @doc """
   Converts `Decimal` representations of various wei denominations (wei, Gwei, ether) to
   a wei base unit.
@@ -258,5 +264,12 @@ end
 defimpl Inspect, for: Explorer.Chain.Wei do
   def inspect(wei, _) do
     "#Explorer.Chain.Wei<#{Decimal.to_string(wei.value)}>"
+  end
+end
+
+defimpl Jason.Encoder, for: Explorer.Chain.Wei do
+  def encode(wei, opts) do
+    # changed since it's needed to return wei value (which is big number) as string
+    Jason.Encode.struct(wei.value, opts)
   end
 end

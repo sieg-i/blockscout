@@ -3,6 +3,8 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
 
   doctest Explorer.SmartContract.Solidity.CodeCompiler
 
+  @moduletag timeout: :infinity
+
   alias Explorer.Factory
   alias Explorer.SmartContract.Solidity.CodeCompiler
 
@@ -12,7 +14,9 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
 
   describe "run/2" do
     setup do
-      {:ok, contract_code_info: Factory.contract_code_info()}
+      {:ok,
+       contract_code_info: Factory.contract_code_info(),
+       contract_code_info_modern_compilator: Factory.contract_code_info_modern_compilator()}
     end
 
     test "compiles the latest solidity version", %{contract_code_info: contract_code_info} do
@@ -33,14 +37,16 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
               }} = response
     end
 
-    test "compiles a optimized smart contract", %{contract_code_info: contract_code_info} do
+    test "compiles a optimized smart contract", %{
+      contract_code_info_modern_compilator: contract_code_info_modern_compilator
+    } do
       optimize = true
 
       response =
         CodeCompiler.run(
-          name: contract_code_info.name,
-          compiler_version: contract_code_info.version,
-          code: contract_code_info.source_code,
+          name: contract_code_info_modern_compilator.name,
+          compiler_version: contract_code_info_modern_compilator.version,
+          code: contract_code_info_modern_compilator.source_code,
           optimize: optimize,
           evm_version: "byzantium"
         )
@@ -53,14 +59,16 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
               }} = response
     end
 
-    test "compiles smart contract with default evm version", %{contract_code_info: contract_code_info} do
+    test "compiles smart contract with default evm version", %{
+      contract_code_info_modern_compilator: contract_code_info_modern_compilator
+    } do
       optimize = true
 
       response =
         CodeCompiler.run(
-          name: contract_code_info.name,
-          compiler_version: contract_code_info.version,
-          code: contract_code_info.source_code,
+          name: contract_code_info_modern_compilator.name,
+          compiler_version: contract_code_info_modern_compilator.version,
+          code: contract_code_info_modern_compilator.source_code,
           optimize: optimize,
           evm_version: "default"
         )
@@ -191,7 +199,8 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
           optimize: contract_code_info.optimized
         )
 
-      assert {:error, :compilation} = response
+      assert {:error, :compilation, "Expected pragma, import directive or contract/interface/library definition."} =
+               response
     end
 
     test "returns constructor in abi" do
@@ -293,7 +302,7 @@ defmodule Explorer.SmartContract.Solidity.CodeCompilerTest do
       path = File.cwd!() <> "/test/support/fixture/smart_contract/large_smart_contract.sol"
       contract = File.read!(path)
 
-      assert {:ok, %{"abi" => abi}} =
+      assert {:ok, %{"abi" => _abi}} =
                CodeCompiler.run(
                  name: "HomeWorkDeployer",
                  compiler_version: "v0.5.9+commit.e560f70d",

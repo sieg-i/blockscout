@@ -5,7 +5,7 @@ defmodule Indexer.Fetcher.InternalTransaction do
   See `async_fetch/1` for details on configuring limits.
   """
 
-  use Indexer.Fetcher
+  use Indexer.Fetcher, restart: :permanent
   use Spandex.Decorators
 
   require Logger
@@ -15,21 +15,15 @@ defmodule Indexer.Fetcher.InternalTransaction do
   alias Explorer.Chain
   alias Explorer.Chain.Block
   alias Explorer.Chain.Cache.{Accounts, Blocks}
+  alias Explorer.Chain.Import.Runner.Blocks, as: BlocksRunner
   alias Indexer.{BufferedTask, Tracer}
+  alias Indexer.Fetcher.InternalTransaction.Supervisor, as: InternalTransactionSupervisor
   alias Indexer.Transform.Addresses
 
   @behaviour BufferedTask
 
-  @max_batch_size 10
-  @max_concurrency 4
-  @defaults [
-    flush_interval: :timer.seconds(3),
-    max_concurrency: @max_concurrency,
-    max_batch_size: @max_batch_size,
-    poll: true,
-    task_supervisor: Indexer.Fetcher.InternalTransaction.TaskSupervisor,
-    metadata: [fetcher: :internal_transaction]
-  ]
+  @default_max_batch_size 10
+  @default_max_concurrency 4
 
   @doc """
   Asynchronously fetches internal transactions.
@@ -39,17 +33,21 @@ defmodule Indexer.Fetcher.InternalTransaction do
   Internal transactions are an expensive upstream operation. The number of
   results to fetch is configured by `@max_batch_size` and represents the number
   of transaction hashes to request internal transactions in a single JSONRPC
-  request. Defaults to `#{@max_batch_size}`.
+  request. Defaults to `#{@default_max_batch_size}`.
 
   The `@max_concurrency` attribute configures the  number of concurrent requests
-  of `@max_batch_size` to allow against the JSONRPC. Defaults to `#{@max_concurrency}`.
+  of `@max_batch_size` to allow against the JSONRPC. Defaults to `#{@default_max_concurrency}`.
 
   *Note*: The internal transactions for individual transactions cannot be paginated,
   so the total number of internal transactions that could be produced is unknown.
   """
   @spec async_fetch([Block.block_number()]) :: :ok
   def async_fetch(block_numbers, timeout \\ 5000) when is_list(block_numbers) do
-    BufferedTask.buffer(__MODULE__, block_numbers, timeout)
+    if InternalTransactionSupervisor.disabled?() do
+      :ok
+    else
+      BufferedTask.buffer(__MODULE__, block_numbers, timeout)
+    end
   end
 
   @doc false
@@ -63,7 +61,7 @@ defmodule Indexer.Fetcher.InternalTransaction do
     end
 
     merged_init_opts =
-      @defaults
+      defaults()
       |> Keyword.merge(mergeable_init_options)
       |> Keyword.put(:state, state)
 
@@ -93,35 +91,52 @@ defmodule Indexer.Fetcher.InternalTransaction do
             )
   def run(block_numbers, json_rpc_named_arguments) do
     unique_numbers = Enum.uniq(block_numbers)
+    filtered_unique_numbers = EthereumJSONRPC.block_numbers_in_range(unique_numbers)
 
-    unique_numbers_count = Enum.count(unique_numbers)
-    Logger.metadata(count: unique_numbers_count)
+    filtered_unique_numbers_count = Enum.count(filtered_unique_numbers)
+    Logger.metadata(count: filtered_unique_numbers_count)
 
     Logger.debug("fetching internal transactions for blocks")
 
     json_rpc_named_arguments
     |> Keyword.fetch!(:variant)
     |> case do
-      EthereumJSONRPC.Parity ->
-        EthereumJSONRPC.fetch_block_internal_transactions(unique_numbers, json_rpc_named_arguments)
-
-      EthereumJSONRPC.Besu ->
-        EthereumJSONRPC.fetch_block_internal_transactions(unique_numbers, json_rpc_named_arguments)
+      variant when variant in [EthereumJSONRPC.Nethermind, EthereumJSONRPC.Erigon, EthereumJSONRPC.Besu] ->
+        EthereumJSONRPC.fetch_block_internal_transactions(filtered_unique_numbers, json_rpc_named_arguments)
 
       _ ->
-        fetch_block_internal_transactions_by_transactions(unique_numbers, json_rpc_named_arguments)
+        try do
+          fetch_block_internal_transactions_by_transactions(filtered_unique_numbers, json_rpc_named_arguments)
+        rescue
+          error ->
+            {:error, error, __STACKTRACE__}
+        end
     end
     |> case do
       {:ok, internal_transactions_params} ->
-        import_internal_transaction(internal_transactions_params, unique_numbers)
+        safe_import_internal_transaction(internal_transactions_params, filtered_unique_numbers)
 
       {:error, reason} ->
-        Logger.error(fn -> ["failed to fetch internal transactions for blocks: ", inspect(reason)] end,
-          error_count: unique_numbers_count
+        Logger.error(
+          fn ->
+            ["failed to fetch internal transactions for blocks: ", Exception.format(:error, reason)]
+          end,
+          error_count: filtered_unique_numbers_count
         )
 
         # re-queue the de-duped entries
-        {:retry, unique_numbers}
+        {:retry, filtered_unique_numbers}
+
+      {:error, reason, stacktrace} ->
+        Logger.error(
+          fn ->
+            ["failed to fetch internal transactions for blocks: ", Exception.format(:error, reason, stacktrace)]
+          end,
+          error_count: filtered_unique_numbers_count
+        )
+
+        # re-queue the de-duped entries
+        {:retry, filtered_unique_numbers}
 
       :ignore ->
         :ok
@@ -156,8 +171,16 @@ defmodule Indexer.Fetcher.InternalTransaction do
         |> Chain.get_transactions_of_block_number()
         |> Enum.map(&params(&1))
         |> case do
-          [] -> {:ok, []}
-          transactions -> EthereumJSONRPC.fetch_internal_transactions(transactions, json_rpc_named_arguments)
+          [] ->
+            {:ok, []}
+
+          transactions ->
+            try do
+              EthereumJSONRPC.fetch_internal_transactions(transactions, json_rpc_named_arguments)
+            catch
+              :exit, error ->
+                {:error, error, __STACKTRACE__}
+            end
         end
         |> case do
           {:ok, internal_transactions} -> {:ok, internal_transactions ++ acc_list}
@@ -167,6 +190,14 @@ defmodule Indexer.Fetcher.InternalTransaction do
       _, error_or_ignore ->
         error_or_ignore
     end)
+  end
+
+  defp safe_import_internal_transaction(internal_transactions_params, block_numbers) do
+    import_internal_transaction(internal_transactions_params, block_numbers)
+  rescue
+    Postgrex.Error ->
+      handle_foreign_key_violation(internal_transactions_params, block_numbers)
+      {:retry, block_numbers}
   end
 
   defp import_internal_transaction(internal_transactions_params, unique_numbers) do
@@ -226,28 +257,56 @@ defmodule Indexer.Fetcher.InternalTransaction do
 
   defp remove_failed_creations(internal_transactions_params) do
     internal_transactions_params
-    |> Enum.map(fn internal_transaction_params ->
-      internal_transaction_params[:trace_address]
+    |> Enum.map(fn internal_transaction_param ->
+      transaction_index = internal_transaction_param[:transaction_index]
+      block_number = internal_transaction_param[:block_number]
 
-      failed_parent_index =
-        Enum.find(internal_transaction_params[:trace_address], fn trace_address ->
-          parent = Enum.at(internal_transactions_params, trace_address)
-
-          !is_nil(parent[:error])
+      failed_parent =
+        internal_transactions_params
+        |> Enum.filter(fn internal_transactions_param ->
+          internal_transactions_param[:block_number] == block_number &&
+            internal_transactions_param[:transaction_index] == transaction_index &&
+            internal_transactions_param[:trace_address] == [] && !is_nil(internal_transactions_param[:error])
         end)
-
-      failed_parent = failed_parent_index && Enum.at(internal_transactions_params, failed_parent_index)
+        |> Enum.at(0)
 
       if failed_parent do
-        internal_transaction_params
+        internal_transaction_param
         |> Map.delete(:created_contract_address_hash)
         |> Map.delete(:created_contract_code)
         |> Map.delete(:gas_used)
         |> Map.delete(:output)
         |> Map.put(:error, failed_parent[:error])
       else
-        internal_transaction_params
+        internal_transaction_param
       end
     end)
+  end
+
+  defp handle_foreign_key_violation(internal_transactions_params, block_numbers) do
+    BlocksRunner.invalidate_consensus_blocks(block_numbers)
+
+    transaction_hashes =
+      internal_transactions_params
+      |> Enum.map(&to_string(&1.transaction_hash))
+      |> Enum.uniq()
+
+    Logger.error(fn ->
+      [
+        "foreign_key_violation on internal transactions import, foreign transactions hashes: ",
+        Enum.join(transaction_hashes, ", ")
+      ]
+    end)
+  end
+
+  defp defaults do
+    [
+      flush_interval: :timer.seconds(3),
+      max_concurrency: Application.get_env(:indexer, __MODULE__)[:concurrency] || @default_max_concurrency,
+      max_batch_size: Application.get_env(:indexer, __MODULE__)[:batch_size] || @default_max_batch_size,
+      poll: true,
+      task_supervisor: Indexer.Fetcher.InternalTransaction.TaskSupervisor,
+      metadata: [fetcher: :internal_transaction]
+    ]
   end
 end

@@ -1,4 +1,4 @@
-use Mix.Config
+import Config
 
 config :indexer,
   block_interval: :timer.seconds(5),
@@ -21,7 +21,9 @@ config :indexer,
     variant: EthereumJSONRPC.Besu
   ],
   subscribe_named_arguments: [
-    transport: System.get_env("ETHEREUM_JSONRPC_WS_URL") && EthereumJSONRPC.WebSocket,
+    transport:
+      System.get_env("ETHEREUM_JSONRPC_WS_URL") && System.get_env("ETHEREUM_JSONRPC_WS_URL") !== "" &&
+        EthereumJSONRPC.WebSocket,
     transport_options: [
       web_socket: EthereumJSONRPC.WebSocket.WebSocketClient,
       url: System.get_env("ETHEREUM_JSONRPC_WS_URL")

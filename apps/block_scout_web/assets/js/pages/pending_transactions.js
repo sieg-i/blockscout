@@ -1,5 +1,5 @@
 import $ from 'jquery'
-import omit from 'lodash/omit'
+import omit from 'lodash.omit'
 import humps from 'humps'
 import numeral from 'numeral'
 import socket from '../socket'
@@ -32,7 +32,9 @@ export function reducer (state = initialState, action) {
       if (state.channelDisconnected) return state
       return Object.assign({}, state, {
         items: state.items.map((item) => item.includes(action.msg.transactionHash) ? action.msg.transactionHtml : item),
+        // @ts-ignore
         pendingTransactionsBatch: state.pendingTransactionsBatch.filter(transactionHtml => !transactionHtml.includes(action.msg.transactionHash)),
+        // @ts-ignore
         pendingTransactionCount: state.pendingTransactionCount - 1
       })
     }
@@ -73,7 +75,8 @@ export function reducer (state = initialState, action) {
 const elements = {
   '[data-selector="channel-disconnected-message"]': {
     render ($el, state) {
-      if (state.channelDisconnected) $el.show()
+      // @ts-ignore
+      if (state.channelDisconnected && !window.loading) $el.show()
     }
   },
   '[data-selector="channel-batching-count"]': {
@@ -100,6 +103,11 @@ const elements = {
 
 const $transactionPendingListPage = $('[data-page="transaction-pending-list"]')
 if ($transactionPendingListPage.length) {
+  window.onbeforeunload = () => {
+    // @ts-ignore
+    window.loading = true
+  }
+
   const store = createAsyncLoadStore(reducer, initialState, 'dataset.identifierHash')
   connectElements({ store, elements })
 

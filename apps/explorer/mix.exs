@@ -15,21 +15,17 @@ defmodule Explorer.Mixfile do
         plt_add_apps: ~w(ex_unit mix)a,
         ignore_warnings: "../../.dialyzer-ignore"
       ],
-      elixir: "~> 1.10",
+      elixir: "~> 1.13",
       elixirc_paths: elixirc_paths(Mix.env()),
       lockfile: "../../mix.lock",
       package: package(),
       preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test,
         credo: :test,
         dialyzer: :test
       ],
       start_permanent: Mix.env() == :prod,
-      test_coverage: [tool: ExCoveralls],
-      version: "0.0.1"
+      version: "5.1.0",
+      xref: [exclude: [BlockScoutWeb.WebRouter.Helpers]]
     ]
   end
 
@@ -52,7 +48,8 @@ defmodule Explorer.Mixfile do
     do: [
       :logger,
       :mix,
-      :runtime_tools
+      :runtime_tools,
+      :tesla
     ]
 
   # Specifies your project dependencies.
@@ -60,19 +57,21 @@ defmodule Explorer.Mixfile do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:bcrypt_elixir, "~> 1.0"},
+      {:bamboo, "~> 2.3.0"},
+      {:mime, "~> 2.0"},
+      {:bcrypt_elixir, "~> 3.0"},
       # benchmark optimizations
-      {:benchee, "~> 0.13.1", only: :test},
+      {:benchee, "~> 1.1.0", only: :test},
       # CSV output for benchee
-      {:benchee_csv, "~> 0.8.0", only: :test},
-      {:bypass, "~> 1.0", only: :test},
+      {:benchee_csv, "~> 1.0.0", only: :test},
+      {:bypass, "~> 2.1", only: :test},
       {:briefly, "~> 0.4", github: "CargoSense/briefly"},
-      {:comeonin, "~> 4.0"},
-      {:credo, "~> 1.1", only: :test, runtime: false},
+      {:comeonin, "~> 5.3"},
+      {:credo, "~> 1.5", only: :test, runtime: false},
       # For Absinthe to load data in batches
       {:dataloader, "~> 1.0.0"},
-      {:decimal, "~> 1.0"},
-      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:decimal, "~> 2.0"},
+      {:dialyxir, "~> 1.1", only: [:dev, :test], runtime: false},
       # `override: true` for `ex_machina` compatibility
       {:ecto, "~> 3.3", override: true},
       # Storing blockchain data and derived data in PostgreSQL.
@@ -81,39 +80,43 @@ defmodule Explorer.Mixfile do
       {:ethereum_jsonrpc, in_umbrella: true},
       # Data factory for testing
       {:ex_machina, "~> 2.3", only: [:test]},
-      # Code coverage
-      {:excoveralls, "~> 0.10.0", only: [:test], github: "KronicDeth/excoveralls", branch: "circle-workflows"},
       {:exvcr, "~> 0.10", only: :test},
       {:httpoison, "~> 1.6"},
-      {:jason, "~> 1.0"},
+      {:jason, "~> 1.3"},
       {:junit_formatter, ">= 0.0.0", only: [:test], runtime: false},
       # Log errors and application output to separate files
       {:logger_file_backend, "~> 0.0.10"},
-      {:math, "~> 0.3.0"},
+      {:math, "~> 0.7.0"},
       {:mock, "~> 0.3.0", only: [:test], runtime: false},
-      {:mox, "~> 0.4", only: [:test]},
-      {:poison, "~> 3.1"},
-      {:nimble_csv, "~> 0.6.0"},
+      {:mox, "~> 1.0", only: [:test]},
+      {:phoenix_html, "== 3.0.4"},
+      {:poison, "~> 4.0.1"},
+      {:nimble_csv, "~> 1.1"},
       {:postgrex, ">= 0.0.0"},
       # For compatibility with `prometheus_process_collector`, which hasn't been updated yet
       {:prometheus, "~> 4.0", override: true},
       # Prometheus metrics for query duration
       {:prometheus_ecto, "~> 1.4.3"},
+      {:prometheus_ex, git: "https://github.com/lanodan/prometheus.ex", branch: "fix/elixir-1.14", override: true},
       # bypass optional dependency
-      {:plug_cowboy, "~> 2.0", only: [:dev, :test]},
+      {:plug_cowboy, "~> 2.2", only: [:dev, :test]},
       {:que, "~> 0.10.1"},
       {:sobelow, ">= 0.7.0", only: [:dev, :test], runtime: false},
       # Tracing
-      {:spandex, github: "spandex-project/spandex", branch: "allow-setting-trace-key", override: true},
+      {:spandex, "~> 3.0"},
       # `:spandex` integration with Datadog
-      {:spandex_datadog, "~> 0.4.0"},
+      {:spandex_datadog, "~> 1.0"},
       # `:spandex` tracing of `:ecto`
-      {:spandex_ecto, "~> 0.4.0"},
+      {:spandex_ecto, "~> 0.7.0"},
       # Attach `:prometheus_ecto` to `:ecto`
-      {:telemetry, "~> 0.4.1"},
+      {:telemetry, "~> 0.4.3"},
       # `Timex.Duration` for `Explorer.Counters.AverageBlockTime.average_block_time/0`
-      {:timex, "~> 3.6"},
-      {:con_cache, "~> 0.13"}
+      {:timex, "~> 3.7.1"},
+      {:con_cache, "~> 1.0"},
+      {:tesla, "~> 1.5.0"},
+      {:cbor, "~> 1.0"},
+      {:cloak_ecto, "~> 1.2.0"},
+      {:redix, "~> 1.1"}
     ]
   end
 
@@ -139,9 +142,9 @@ defmodule Explorer.Mixfile do
 
   defp package do
     [
-      maintainers: ["POA Networks Ltd."],
+      maintainers: ["Blockscout"],
       licenses: ["GPL 3.0"],
-      links: %{"GitHub" => "https://github.com/poanetwork/blockscout"}
+      links: %{"GitHub" => "https://github.com/blockscout/blockscout"}
     ]
   end
 end

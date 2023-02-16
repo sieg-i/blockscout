@@ -1,5 +1,6 @@
 defmodule BlockScoutWeb.AddressTokenControllerTest do
   use BlockScoutWeb.ConnCase, async: true
+  use ExUnit.Case, async: false
 
   import BlockScoutWeb.WebRouter.Helpers, only: [address_token_path: 3]
   import Mox
@@ -110,13 +111,13 @@ defmodule BlockScoutWeb.AddressTokenControllerTest do
         value: 1000
       )
 
-      %Token{name: name, type: type, inserted_at: inserted_at} = token
+      %Token{name: name, type: type, inserted_at: _inserted_at} = token
 
       conn =
         get(conn, address_token_path(BlockScoutWeb.Endpoint, :index, Address.checksum(address.hash)), %{
           "token_name" => name,
           "token_type" => type,
-          "token_inserted_at" => inserted_at,
+          "value" => 1000,
           "type" => "JSON"
         })
 

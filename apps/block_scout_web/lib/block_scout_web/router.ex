@@ -4,8 +4,13 @@ defmodule BlockScoutWeb.Router do
   alias BlockScoutWeb.Plug.GraphQL
   alias BlockScoutWeb.{ApiRouter, WebRouter}
 
-  forward("/wobserver", Wobserver.Web.Router)
-  forward("/admin", BlockScoutWeb.AdminRouter)
+  if Application.compile_env(:block_scout_web, ApiRouter)[:wobserver_enabled] do
+    forward("/wobserver", Wobserver.Web.Router)
+  end
+
+  if Application.compile_env(:block_scout_web, :admin_panel_enabled) do
+    forward("/admin", BlockScoutWeb.AdminRouter)
+  end
 
   pipeline :browser do
     plug(:accepts, ["html"])
@@ -21,7 +26,7 @@ defmodule BlockScoutWeb.Router do
 
   forward("/api", ApiRouter)
 
-  if Application.get_env(:block_scout_web, ApiRouter)[:reading_enabled] do
+  if Application.compile_env(:block_scout_web, ApiRouter)[:reading_enabled] do
     # Needs to be 200 to support the schema introspection for graphiql
     @max_complexity 200
 
@@ -42,19 +47,19 @@ defmodule BlockScoutWeb.Router do
   else
     scope "/", BlockScoutWeb do
       pipe_through(:browser)
-      get("/api_docs", PageNotFoundController, :index)
-      get("/eth_rpc_api_docs", PageNotFoundController, :index)
+      get("/api-docs", PageNotFoundController, :index)
+      get("/eth-rpc-api-docs", PageNotFoundController, :index)
     end
   end
 
   scope "/", BlockScoutWeb do
     pipe_through(:browser)
 
-    get("/api_docs", APIDocsController, :index)
-    get("/eth_rpc_api_docs", APIDocsController, :eth_rpc)
+    get("/api-docs", APIDocsController, :index)
+    get("/eth-rpc-api-docs", APIDocsController, :eth_rpc)
   end
 
-  url_params = Application.get_env(:block_scout_web, BlockScoutWeb.Endpoint)[:url]
+  url_params = Application.compile_env(:block_scout_web, BlockScoutWeb.Endpoint)[:url]
   api_path = url_params[:api_path]
   path = url_params[:path]
 
@@ -72,7 +77,7 @@ defmodule BlockScoutWeb.Router do
     end
   end
 
-  if Application.get_env(:block_scout_web, WebRouter)[:enabled] do
+  if Application.compile_env(:block_scout_web, WebRouter)[:enabled] do
     forward("/", BlockScoutWeb.WebRouter)
   else
     scope "/", BlockScoutWeb do

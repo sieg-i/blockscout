@@ -1,10 +1,10 @@
 import $ from 'jquery'
-import map from 'lodash/map'
-import get from 'lodash/get'
-import noop from 'lodash/noop'
-import find from 'lodash/find'
-import intersectionBy from 'lodash/intersectionBy'
-import differenceBy from 'lodash/differenceBy'
+import map from 'lodash.map'
+import get from 'lodash.get'
+import noop from 'lodash.noop'
+import find from 'lodash.find'
+import intersectionBy from 'lodash.intersectionby'
+import differenceBy from 'lodash.differenceby'
 import morph from 'nanomorph'
 import { updateAllAges } from './from_now'
 
@@ -27,16 +27,16 @@ import { updateAllAges } from './from_now'
 //   key:        the path to the unique identifier of each element
 //   horizontal: our horizontal animations are handled in CSS, so passing in `true` will not play JS
 //               animations
+// @ts-ignore
 export default function (container, newElements, { key, horizontal } = {}) {
   if (!container) return
-  const oldElements = $(container).children().get()
+  const oldElements = $(container).children().not('.shrink-out').get()
   let currentList = map(oldElements, (el) => ({ id: get(el, key), el }))
   const newList = map(newElements, (el) => ({ id: get(el, key), el }))
   const overlap = intersectionBy(newList, currentList, 'id').map(({ id, el }) => ({ id, el: updateAllAges($(el))[0] }))
-
   // remove old items
   const removals = differenceBy(currentList, newList, 'id')
-  let canAnimate = !horizontal && removals.length <= 1
+  let canAnimate = false && !horizontal && newList.length > 0 // disabled animation in order to speed up UI
   removals.forEach(({ el }) => {
     if (!canAnimate) return el.remove()
     const $el = $(el)
@@ -46,19 +46,27 @@ export default function (container, newElements, { key, horizontal } = {}) {
   currentList = differenceBy(currentList, removals, 'id')
 
   // update kept items
-  currentList = currentList.map(({ el }, i) => ({
-    id: overlap[i] && overlap[i].id,
-    el: el.outerHTML === overlap[i] && overlap[i].el && overlap[i].el.outerHTML ? el : morph(el, overlap[i].el)
-  }))
+  currentList = currentList.map(({ el }, i) => {
+    if (overlap[i]) {
+      return ({
+        id: overlap[i].id,
+        // @ts-ignore
+        el: el.outerHTML === overlap[i].el && overlap[i].el.outerHTML ? el : morph(el, overlap[i].el)
+      })
+    } else {
+      return null
+    }
+  })
+    .filter(el => el !== null)
 
   // add new items
   const finalList = newList.map(({ id, el }) => get(find(currentList, { id }), 'el', el)).reverse()
-  canAnimate = !horizontal
+  canAnimate = false && !horizontal // disabled animation in order to speed up UI
   finalList.forEach((el, i) => {
     if (el.parentElement) return
     if (!canAnimate) return container.insertBefore(el, get(finalList, `[${i - 1}]`))
-    canAnimate = false
     if (!get(finalList, `[${i - 1}]`)) return slideDownAppend($(container), el)
+    // @ts-ignore
     slideDownBefore($(get(finalList, `[${i - 1}]`)), el)
   })
 }

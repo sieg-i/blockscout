@@ -3,7 +3,7 @@ defmodule BlockScoutWeb.PendingTransactionController do
 
   import BlockScoutWeb.Chain, only: [paging_options: 1, next_page_params: 3, split_list_by_page: 1]
 
-  alias BlockScoutWeb.TransactionView
+  alias BlockScoutWeb.{Controller, TransactionView}
   alias Explorer.Chain
   alias Phoenix.View
 
@@ -17,7 +17,9 @@ defmodule BlockScoutWeb.PendingTransactionController do
           necessity_by_association: %{
             [from_address: :names] => :optional,
             [to_address: :names] => :optional,
-            [created_contract_address: :names] => :optional
+            [created_contract_address: :names] => :optional,
+            [from_address: :smart_contract] => :optional,
+            [to_address: :smart_contract] => :optional
           }
         ],
         paging_options(params)
@@ -57,11 +59,11 @@ defmodule BlockScoutWeb.PendingTransactionController do
   end
 
   def index(conn, _params) do
-    render(conn, "index.html", current_path: current_path(conn))
+    render(conn, "index.html", current_path: Controller.current_full_path(conn))
   end
 
   defp get_pending_transactions_and_next_page(options) do
-    transactions_plus_one = Chain.recent_pending_transactions(options)
+    transactions_plus_one = Chain.recent_pending_transactions(options, true)
     split_list_by_page(transactions_plus_one)
   end
 end

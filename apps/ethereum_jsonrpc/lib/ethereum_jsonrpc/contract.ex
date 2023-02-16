@@ -16,7 +16,7 @@ defmodule EthereumJSONRPC.Contract do
   """
   @type call :: %{
           required(:contract_address) => String.t(),
-          required(:function_name) => String.t(),
+          required(:method_id) => String.t(),
           required(:args) => [term()],
           optional(:block_number) => EthereumJSONRPC.block_number()
         }
@@ -26,21 +26,30 @@ defmodule EthereumJSONRPC.Contract do
   """
   @type call_result :: {:ok, term()} | {:error, String.t()}
 
-  @spec execute_contract_functions([call()], [map()], EthereumJSONRPC.json_rpc_named_arguments()) :: [call_result()]
-  def execute_contract_functions(requests, abi, json_rpc_named_arguments) do
+  @spec execute_contract_functions([call()], [map()], EthereumJSONRPC.json_rpc_named_arguments(), true | false) :: [
+          call_result()
+        ]
+  def execute_contract_functions(requests, abi, json_rpc_named_arguments, leave_error_as_map \\ false) do
     parsed_abi =
       abi
       |> ABI.parse_specification()
 
-    functions = Enum.into(parsed_abi, %{}, &{&1.function, &1})
+    functions = Enum.into(parsed_abi, %{}, &{&1.method_id, &1})
 
     requests_with_index = Enum.with_index(requests)
 
     indexed_responses =
       requests_with_index
-      |> Enum.map(fn {%{contract_address: contract_address, function_name: function_name, args: args} = request, index} ->
-        functions[function_name]
-        |> Encoder.encode_function_call(args)
+      |> Enum.map(fn {%{contract_address: contract_address, method_id: target_method_id, args: args} = request, index} ->
+        function =
+          functions
+          |> define_function(target_method_id)
+          |> Map.drop([:method_id])
+
+        formatted_args = format_args(function, args)
+
+        function
+        |> Encoder.encode_function_call(formatted_args)
         |> eth_call_request(contract_address, index, Map.get(request, :block_number), Map.get(request, :from))
       end)
       |> json_rpc(json_rpc_named_arguments)
@@ -52,16 +61,16 @@ defmodule EthereumJSONRPC.Contract do
       end
       |> Enum.into(%{}, &{&1.id, &1})
 
-    Enum.map(requests_with_index, fn {%{function_name: function_name}, index} ->
-      selectors = Enum.filter(parsed_abi, fn p_abi -> p_abi.function == function_name end)
-
+    Enum.map(requests_with_index, fn {%{method_id: method_id}, index} ->
       indexed_responses[index]
       |> case do
         nil ->
           {:error, "No result"}
 
         response ->
-          {^index, result} = Encoder.decode_result(response, selectors)
+          selectors = define_selectors(parsed_abi, method_id)
+
+          {^index, result} = Encoder.decode_result(response, selectors, leave_error_as_map)
           result
       end
     end)
@@ -70,18 +79,126 @@ defmodule EthereumJSONRPC.Contract do
       Enum.map(requests, fn _ -> format_error(error) end)
   end
 
-  defp eth_call_request(data, contract_address, id, block_number, from) do
+  defp format_args(function, args) do
+    types = function.types
+
+    args
+    |> Enum.with_index()
+    |> Enum.map(fn {arg, index} ->
+      type = Enum.at(types, index)
+
+      convert_string_to_array(type, arg)
+    end)
+  end
+
+  defp convert_string_to_array(type, arg) do
+    case type do
+      {:array, {:int, _size}} ->
+        convert_int_string_to_array(arg)
+
+      {:array, {:uint, _size}} ->
+        convert_int_string_to_array(arg)
+
+      {:array, _} ->
+        convert_string_to_array(arg)
+
+      _ ->
+        arg
+    end
+  end
+
+  defp convert_int_string_to_array(arg) when is_nil(arg), do: true
+
+  defp convert_int_string_to_array(arg) when is_list(arg), do: convert_int_string_to_array_inner(arg)
+
+  defp convert_int_string_to_array(arg) when not is_nil(arg) do
+    cond do
+      String.starts_with?(arg, "[") && String.ends_with?(arg, "]") ->
+        arg
+        |> String.trim_leading("[")
+        |> String.trim_trailing("]")
+        |> String.split(",")
+        |> convert_int_string_to_array_inner()
+
+      arg !== "" ->
+        arg
+        |> String.split(",")
+        |> convert_int_string_to_array_inner()
+
+      true ->
+        []
+    end
+  end
+
+  defp convert_int_string_to_array_inner(arg) do
+    arg
+    |> Enum.map(fn el ->
+      {int, _} = Integer.parse(el)
+      int
+    end)
+  end
+
+  defp convert_string_to_array(arg) when is_nil(arg), do: true
+
+  defp convert_string_to_array(arg) when is_list(arg), do: arg
+
+  defp convert_string_to_array(arg) when not is_nil(arg) do
+    cond do
+      String.starts_with?(arg, "[") && String.ends_with?(arg, "]") ->
+        arg
+        |> String.trim_leading("[")
+        |> String.trim_trailing("]")
+        |> String.split(",")
+
+      arg !== "" ->
+        String.split(arg, ",")
+
+      true ->
+        []
+    end
+  end
+
+  defp define_function(functions, target_method_id) do
+    {_, function} =
+      Enum.find(functions, fn {method_id, _func} ->
+        if method_id do
+          Base.encode16(method_id, case: :lower) == target_method_id || method_id == target_method_id
+        else
+          method_id == target_method_id
+        end
+      end)
+
+    function
+  end
+
+  defp define_selectors(parsed_abi, method_id) do
+    Enum.filter(parsed_abi, fn p_abi ->
+      if p_abi.method_id do
+        Base.encode16(p_abi.method_id, case: :lower) == method_id || p_abi.method_id == method_id
+      else
+        p_abi.method_id == method_id
+      end
+    end)
+  end
+
+  def eth_call_request(data, contract_address, id, block_number, from) do
     block =
       case block_number do
         nil -> "latest"
         block_number -> integer_to_quantity(block_number)
       end
 
-    request(%{
+    params =
+      %{to: contract_address, data: data}
+      |> (&if(is_nil(from), do: &1, else: Map.put(&1, :from, from))).()
+
+    full_params = %{
       id: id,
       method: "eth_call",
-      params: [%{to: contract_address, data: data, from: from}, block]
-    })
+      params: [params, block]
+    }
+
+    request(full_params)
   end
 
   def eth_get_storage_at_request(contract_address, storage_pointer, block_number, json_rpc_named_arguments) do
@@ -102,6 +219,8 @@ defmodule EthereumJSONRPC.Contract do
     end
   end
 
+  defp format_error(nil), do: {:error, ""}
+
   defp format_error(message) when is_binary(message) do
     {:error, message}
   end
@@ -111,6 +230,9 @@ defmodule EthereumJSONRPC.Contract do
   end
 
   defp format_error(error) do
-    format_error(Exception.message(error))
+    error
+    |> Map.put(:hide_url, true)
+    |> Exception.message()
+    |> format_error()
   end
 end

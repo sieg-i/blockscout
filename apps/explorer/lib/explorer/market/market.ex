@@ -56,7 +56,12 @@ defmodule Explorer.Market do
 
     matches_known_address = known_address && known_address == token.contract_address_hash
 
-    usd_value = fetch_token_usd_value(matches_known_address, symbol)
+    usd_value =
+      if matches_known_address do
+        fetch_token_usd_value(matches_known_address, symbol)
+      else
+        nil
+      end
 
     Map.put(token, :usd_value, usd_value)
   end
@@ -68,7 +73,15 @@ defmodule Explorer.Market do
   end
 
   def add_price(tokens) when is_list(tokens) do
-    Enum.map(tokens, &add_price/1)
+    Enum.map(tokens, fn item ->
+      case item do
+        {token_balance, token} ->
+          {token_balance, add_price(token)}
+
+        token_balance ->
+          add_price(token_balance)
+      end
+    end)
   end
 
   defp fetch_token_usd_value(true, symbol) do

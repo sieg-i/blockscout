@@ -8,6 +8,7 @@ defmodule Explorer.Chain.Token do
 
   * ERC-20
   * ERC-721
+  * ERC-1155
 
   ## Token Specifications
 
@@ -23,6 +24,7 @@ defmodule Explorer.Chain.Token do
 
   alias Ecto.Changeset
   alias Explorer.Chain.{Address, Hash, Token}
+  alias Explorer.SmartContract.Helper
 
   @typedoc """
   * `name` - Name of the token
@@ -45,10 +47,19 @@ defmodule Explorer.Chain.Token do
           cataloged: boolean(),
           contract_address: %Ecto.Association.NotLoaded{} | Address.t(),
           contract_address_hash: Hash.Address.t(),
-          holder_count: non_neg_integer() | nil
+          holder_count: non_neg_integer() | nil,
+          skip_metadata: boolean()
         }
 
   @derive {Poison.Encoder,
+           except: [
+             :__meta__,
+             :contract_address,
+             :inserted_at,
+             :updated_at
+           ]}
+
+  @derive {Jason.Encoder,
            except: [
              :__meta__,
              :contract_address,
@@ -65,6 +76,7 @@ defmodule Explorer.Chain.Token do
     field(:type, :string)
     field(:cataloged, :boolean)
     field(:holder_count, :integer)
+    field(:skip_metadata, :boolean)
 
     belongs_to(
       :contract_address,
@@ -79,7 +91,7 @@ defmodule Explorer.Chain.Token do
   end
 
   @required_attrs ~w(contract_address_hash type)a
-  @optional_attrs ~w(cataloged decimals name symbol total_supply)a
+  @optional_attrs ~w(cataloged decimals name symbol total_supply skip_metadata)a
 
   @doc false
   def changeset(%Token{} = token, params \\ %{}) do
@@ -88,6 +100,8 @@ defmodule Explorer.Chain.Token do
     |> validate_required(@required_attrs)
     |> foreign_key_constraint(:contract_address)
     |> trim_name()
+    |> sanitize_token_input(:name)
+    |> sanitize_token_input(:symbol)
     |> unique_constraint(:contract_address_hash)
   end
 
@@ -100,19 +114,31 @@ defmodule Explorer.Chain.Token do
     end
   end
 
+  defp sanitize_token_input(%Changeset{valid?: false} = changeset, _), do: changeset
+
+  defp sanitize_token_input(%Changeset{valid?: true} = changeset, key) do
+    case get_change(changeset, key) do
+      nil ->
+        changeset
+
+      property ->
+        put_change(changeset, key, Helper.sanitize_input(property))
+    end
+  end
+
   @doc """
   Builds an `Ecto.Query` to fetch the cataloged tokens.
 
   These are tokens with cataloged field set to true and updated_at is earlier or equal than an hour ago.
   """
-  def cataloged_tokens(hours \\ 48) do
+  def cataloged_tokens(minutes \\ 2880) do
     date_now = DateTime.utc_now()
-    hours_ago_date = DateTime.add(date_now, -:timer.hours(hours), :millisecond)
+    some_time_ago_date = DateTime.add(date_now, -:timer.minutes(minutes), :millisecond)
 
     from(
       token in __MODULE__,
       select: token.contract_address_hash,
-      where: token.cataloged == true and token.updated_at <= ^hours_ago_date
+      where: token.cataloged == true and token.updated_at <= ^some_time_ago_date
     )
   end
 end

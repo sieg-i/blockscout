@@ -14,31 +14,31 @@ defmodule BlockScoutWeb.LayoutViewTest do
   end
 
   describe "logo/0" do
-    test "use the enviroment logo when it's configured" do
+    test "use the environment logo when it's configured" do
       Application.put_env(:block_scout_web, BlockScoutWeb.Chain, logo: "custom/logo.png")
 
       assert LayoutView.logo() == "custom/logo.png"
     end
 
-    test "use the default logo when there is no env configured for it" do
-      assert LayoutView.logo() == "/images/blockscout_logo.svg"
+    test "logo is nil when there is no env configured for it" do
+      assert LayoutView.logo() == nil
     end
   end
 
   describe "subnetwork_title/0" do
-    test "use the enviroment subnetwork title when it's configured" do
+    test "use the environment subnetwork title when it's configured" do
       Application.put_env(:block_scout_web, BlockScoutWeb.Chain, subnetwork: "Subnetwork Test")
 
       assert LayoutView.subnetwork_title() == "Subnetwork Test"
     end
 
     test "use the default subnetwork title when there is no env configured for it" do
-      assert LayoutView.subnetwork_title() == "POA Sokol"
+      assert LayoutView.subnetwork_title() == "Sokol"
     end
   end
 
   describe "network_title/0" do
-    test "use the enviroment network title when it's configured" do
+    test "use the environment network title when it's configured" do
       Application.put_env(:block_scout_web, BlockScoutWeb.Chain, network: "Custom Network")
 
       assert LayoutView.network_title() == "Custom Network"
@@ -67,7 +67,7 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.release_link("v1.3.4-beta") ==
                {:safe,
-                ~s(<a href="https://github.com/poanetwork/blockscout/releases/tag/v1.3.4-beta" class="footer-link" target="_blank">v1.3.4-beta</a>)}
+                ~s(<a href="https://github.com/blockscout/blockscout/releases/tag/v1.3.4-beta" class="footer-link" target="_blank">v1.3.4-beta</a>)}
     end
 
     test "use the default value when empty release_link env configured for it" do
@@ -75,10 +75,10 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.release_link("v1.3.4-beta") ==
                {:safe,
-                ~s(<a href="https://github.com/poanetwork/blockscout/releases/tag/v1.3.4-beta" class="footer-link" target="_blank">v1.3.4-beta</a>)}
+                ~s(<a href="https://github.com/blockscout/blockscout/releases/tag/v1.3.4-beta" class="footer-link" target="_blank">v1.3.4-beta</a>)}
     end
 
-    test "use the enviroment release link when it's configured" do
+    test "use the environment release link when it's configured" do
       Application.put_env(
         :block_scout_web,
         :release_link,
@@ -91,7 +91,7 @@ defmodule BlockScoutWeb.LayoutViewTest do
     end
   end
 
-  @supported_chains_pattern ~s([ { "title": "RSK Mainnet", "url": "https://blockscout.com/rsk/mainnet", "other?": true }, { "title": "POA Sokol", "url": "https://blockscout.com/poa/sokol", "test_net?": true }, { "title": "POA Core", "url": "https://blockscout.com/poa/core" }, { "title": "LUKSO L14 testnet", "url": "https://blockscout.com/lukso/l14", "test_net?": true, "hide_in_dropdown?": true } ])
+  @supported_chains_pattern ~s([ { "title": "RSK", "url": "https://blockscout.com/rsk/mainnet", "other?": true }, { "title": "Sokol", "url": "https://blockscout.com/poa/sokol", "test_net?": true }, { "title": "POA", "url": "https://blockscout.com/poa/core" }, { "title": "LUKSO L14", "url": "https://blockscout.com/lukso/l14", "test_net?": true, "hide_in_dropdown?": true } ])
 
   describe "other_networks/0" do
     test "get networks list based on env variables" do
@@ -99,16 +99,16 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.other_networks() == [
                %{
-                 title: "POA Core",
+                 title: "POA",
                  url: "https://blockscout.com/poa/core"
                },
                %{
-                 title: "RSK Mainnet",
+                 title: "RSK",
                  url: "https://blockscout.com/rsk/mainnet",
                  other?: true
                },
                %{
-                 title: "LUKSO L14 testnet",
+                 title: "LUKSO L14",
                  url: "https://blockscout.com/lukso/l14",
                  test_net?: true,
                  hide_in_dropdown?: true
@@ -129,11 +129,11 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.main_nets(LayoutView.other_networks()) == [
                %{
-                 title: "POA Core",
+                 title: "POA",
                  url: "https://blockscout.com/poa/core"
                },
                %{
-                 title: "RSK Mainnet",
+                 title: "RSK",
                  url: "https://blockscout.com/rsk/mainnet",
                  other?: true
                }
@@ -147,7 +147,7 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.test_nets(LayoutView.other_networks()) == [
                %{
-                 title: "LUKSO L14 testnet",
+                 title: "LUKSO L14",
                  url: "https://blockscout.com/lukso/l14",
                  test_net?: true,
                  hide_in_dropdown?: true
@@ -162,11 +162,11 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.dropdown_nets() == [
                %{
-                 title: "POA Core",
+                 title: "POA",
                  url: "https://blockscout.com/poa/core"
                },
                %{
-                 title: "RSK Mainnet",
+                 title: "RSK",
                  url: "https://blockscout.com/rsk/mainnet",
                  other?: true
                }
@@ -180,7 +180,7 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.dropdown_head_main_nets() == [
                %{
-                 title: "POA Core",
+                 title: "POA",
                  url: "https://blockscout.com/poa/core"
                }
              ]
@@ -193,7 +193,7 @@ defmodule BlockScoutWeb.LayoutViewTest do
 
       assert LayoutView.dropdown_other_nets() == [
                %{
-                 title: "RSK Mainnet",
+                 title: "RSK",
                  url: "https://blockscout.com/rsk/mainnet",
                  other?: true
                }

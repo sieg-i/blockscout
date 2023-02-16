@@ -26,4 +26,10 @@ defmodule Explorer.ExchangeRates.Source.OneCoinSource do
 
   @impl Source
   def source_url, do: ""
+
+  @impl Source
+  def source_url(_), do: :ignore
+
+  @impl Source
+  def headers, do: []
 end

@@ -2,7 +2,7 @@ defmodule Explorer.ExchangeRates do
   @moduledoc """
   Local cache for token exchange rates.
 
-  Exchange rate data is updated every 5 minutes.
+  Exchange rate data is updated every 10 minutes or CACHE_EXCHANGE_RATES_PERIOD seconds.
   """
 
   use GenServer
@@ -10,9 +10,10 @@ defmodule Explorer.ExchangeRates do
   require Logger
 
   alias Explorer.Chain.Events.Publisher
+  alias Explorer.Counters.Helper
   alias Explorer.ExchangeRates.{Source, Token}
 
-  @interval :timer.minutes(5)
+  @interval Helper.cache_period_default_in_minutes("CACHE_EXCHANGE_RATES_PERIOD", 10)
   @table_name :exchange_rates
 
   @impl GenServer
@@ -42,7 +43,7 @@ defmodule Explorer.ExchangeRates do
   def handle_info({_ref, {:error, reason}}, state) do
     Logger.warn(fn -> "Failed to get exchange rates with reason '#{reason}'." end)
 
-    fetch_rates()
+    schedule_next_consolidation()
 
     {:noreply, state}
   end
@@ -75,6 +76,10 @@ defmodule Explorer.ExchangeRates do
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  defp schedule_next_consolidation do
+    Process.send_after(self(), :update, :timer.minutes(1))
   end
 
   @doc """

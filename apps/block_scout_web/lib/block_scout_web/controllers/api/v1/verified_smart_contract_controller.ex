@@ -1,11 +1,14 @@
 defmodule BlockScoutWeb.API.V1.VerifiedSmartContractController do
   use BlockScoutWeb, :controller
 
+  alias BlockScoutWeb.API.APILogger
   alias Explorer.Chain
   alias Explorer.Chain.Hash.Address
-  alias Explorer.SmartContract.Publisher
+  alias Explorer.SmartContract.Solidity.Publisher
 
   def create(conn, params) do
+    APILogger.log(conn)
+
     with {:ok, hash} <- validate_address_hash(params["address_hash"]),
          :ok <- Chain.check_address_exists(hash),
          {:contract, :not_found} <- {:contract, Chain.check_verified_smart_contract_exists(hash)} do
@@ -13,7 +16,7 @@ defmodule BlockScoutWeb.API.V1.VerifiedSmartContractController do
 
       case Publisher.publish(hash, params, external_libraries) do
         {:ok, _} ->
-          send_resp(conn, :created, Jason.encode!(%{status: :success}))
+          send_resp(conn, :created, encode(%{status: :success}))
 
         {:error, changeset} ->
           errors =
@@ -52,7 +55,10 @@ defmodule BlockScoutWeb.API.V1.VerifiedSmartContractController do
   end
 
   defp fetch_external_libraries(params) do
-    keys = Enum.flat_map(1..5, fn i -> ["library#{i}_name", "library#{i}_address"] end)
+    keys =
+      Enum.flat_map(1..Application.get_env(:block_scout_web, :verification_max_libraries), fn i ->
+        ["library#{i}_name", "library#{i}_address"]
+      end)
 
     Map.take(params, keys)
   end

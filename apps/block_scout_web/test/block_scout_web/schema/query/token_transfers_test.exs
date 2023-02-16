@@ -4,7 +4,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
   describe "token_transfers field" do
     test "with valid argument, returns all expected fields", %{conn: conn} do
       transaction = insert(:transaction)
-      token_transfer = insert(:token_transfer, transaction: transaction)
+      token_transfer = insert(:token_transfer, transaction: transaction, token_ids: [5], amounts: [10])
       address_hash = to_string(token_transfer.token_contract_address_hash)
 
       query = """
@@ -13,9 +13,11 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
           edges {
             node {
               amount
+              amounts
               block_number
               log_index
               token_id
+              token_ids
               from_address_hash
               to_address_hash
               token_contract_address_hash
@@ -31,7 +33,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         "first" => 1
       }
 
-      conn = get(conn, "/graphql", query: query, variables: variables)
+      conn = post(conn, "/graphql", query: query, variables: variables)
 
       assert json_response(conn, 200) == %{
                "data" => %{
@@ -40,9 +42,11 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
                      %{
                        "node" => %{
                          "amount" => to_string(token_transfer.amount),
+                         "amounts" => Enum.map(token_transfer.amounts, &to_string/1),
                          "block_number" => token_transfer.block_number,
                          "log_index" => token_transfer.log_index,
                          "token_id" => token_transfer.token_id,
+                         "token_ids" => Enum.map(token_transfer.token_ids, &to_string/1),
                          "from_address_hash" => to_string(token_transfer.from_address_hash),
                          "to_address_hash" => to_string(token_transfer.to_address_hash),
                          "token_contract_address_hash" => to_string(token_transfer.token_contract_address_hash),
@@ -82,7 +86,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         "first" => 10
       }
 
-      conn = get(conn, "/graphql", query: query, variables: variables)
+      conn = post(conn, "/graphql", query: query, variables: variables)
 
       assert json_response(conn, 200) == %{
                "data" => %{
@@ -117,7 +121,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
 
       response1 =
         conn
-        |> get("/graphql", query: query1, variables: variables1)
+        |> post("/graphql", query: query1, variables: variables1)
         |> json_response(200)
 
       %{"errors" => [response1_error1, response1_error2]} = response1
@@ -146,7 +150,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
 
       response2 =
         conn
-        |> get("/graphql", query: query2, variables: variables2)
+        |> post("/graphql", query: query2, variables: variables2)
         |> json_response(200)
 
       %{"errors" => [response2_error1, response2_error2]} = response2
@@ -208,7 +212,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
 
       [token_transfer] =
         conn
-        |> get("/graphql", query: query, variables: variables)
+        |> post("/graphql", query: query, variables: variables)
         |> json_response(200)
         |> get_in(["data", "token_transfers", "edges"])
 
@@ -260,7 +264,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         "first" => 1
       }
 
-      conn = get(conn, "/graphql", query: query1, variables: variables1)
+      conn = post(conn, "/graphql", query: query1, variables: variables1)
 
       %{"data" => %{"token_transfers" => page1}} = json_response(conn, 200)
 
@@ -274,7 +278,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         |> Map.get("cursor")
 
       query2 = """
-      query ($token_contract_address_hash: AddressHash!, $first: Int!, $after: ID!) {
+      query ($token_contract_address_hash: AddressHash!, $first: Int!, $after: String!) {
       token_transfers(token_contract_address_hash: $token_contract_address_hash, first: $first, after: $after) {
           page_info {
             has_next_page
@@ -296,7 +300,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         "after" => last_cursor_page1
       }
 
-      conn = get(conn, "/graphql", query: query2, variables: variables2)
+      conn = post(conn, "/graphql", query: query2, variables: variables2)
 
       %{"data" => %{"token_transfers" => page2}} = json_response(conn, 200)
 
@@ -315,7 +319,7 @@ defmodule BlockScoutWeb.Schema.Query.TokenTransfersTest do
         "after" => last_cursor_page2
       }
 
-      conn = get(conn, "/graphql", query: query2, variables: variables3)
+      conn = post(conn, "/graphql", query: query2, variables: variables3)
 
       %{"data" => %{"token_transfers" => page3}} = json_response(conn, 200)
 
