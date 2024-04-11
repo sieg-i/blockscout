@@ -46,7 +46,7 @@ defmodule Explorer.Chain.Import.Runner.Address.TokenBalances do
       Instrumenter.block_import_stage_runner(
         fn -> insert(repo, changes_list, insert_options) end,
         :block_referencing,
-        :token_blances,
+        :token_balances,
         :address_token_balances
       )
     end)
@@ -69,10 +69,11 @@ defmodule Explorer.Chain.Import.Runner.Address.TokenBalances do
     ordered_changes_list =
       changes_list
       |> Enum.map(fn change ->
-        if Map.has_key?(change, :token_id) and Map.get(change, :token_type) == "ERC-1155" do
-          change
-        else
-          Map.put(change, :token_id, nil)
+        cond do
+          Map.has_key?(change, :token_id) and Map.get(change, :token_type) == "ERC-1155" -> change
+          Map.get(change, :token_type) == "ERC-404" and Map.has_key?(change, :token_id) -> Map.put(change, :value, nil)
+          Map.get(change, :token_type) == "ERC-404" and Map.has_key?(change, :value) -> Map.put(change, :token_id, nil)
+          true -> Map.put(change, :token_id, nil)
         end
       end)
       |> Enum.group_by(fn %{
@@ -84,16 +85,14 @@ defmodule Explorer.Chain.Import.Runner.Address.TokenBalances do
         {token_contract_address_hash, token_id, address_hash, block_number}
       end)
       |> Enum.map(fn {_, grouped_address_token_balances} ->
-        if Enum.count(grouped_address_token_balances) > 1 do
-          Enum.max_by(grouped_address_token_balances, fn balance -> Map.get(balance, :value_fetched_at) end)
-        else
-          Enum.at(grouped_address_token_balances, 0)
-        end
+        process_grouped_address_token_balances(grouped_address_token_balances)
       end)
       |> Enum.sort_by(&{&1.token_contract_address_hash, &1.token_id, &1.address_hash, &1.block_number})
 
     {:ok, inserted_changes_list} =
-      if Enum.count(ordered_changes_list) > 0 do
+      if Enum.empty?(ordered_changes_list) do
+        {:ok, []}
+      else
         Import.insert_changes_list(
           repo,
           ordered_changes_list,
@@ -105,11 +104,17 @@ defmodule Explorer.Chain.Import.Runner.Address.TokenBalances do
           timeout: timeout,
           timestamps: timestamps
         )
-      else
-        {:ok, []}
       end
 
     {:ok, inserted_changes_list}
+  end
+
+  defp process_grouped_address_token_balances(grouped_address_token_balances) do
+    if Enum.count(grouped_address_token_balances) > 1 do
+      Enum.max_by(grouped_address_token_balances, fn balance -> Map.get(balance, :value_fetched_at) end)
+    else
+      Enum.at(grouped_address_token_balances, 0)
+    end
   end
 
   defp default_on_conflict do

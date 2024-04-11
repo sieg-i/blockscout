@@ -107,35 +107,13 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
       |> Map.put_new(:timeout, @timeout)
       |> Map.put(:timestamps, timestamps)
 
-    # Enforce ShareLocks tables order (see docs: sharelocks.md)
-    run_func = fn repo ->
-      token_contract_address_hashes_and_ids =
-        changes_list
-        |> Enum.map(fn change ->
-          token_id = get_tokend_id(change)
-
-          {change.token_contract_address_hash, token_id}
-        end)
-        |> Enum.uniq()
-
-      Tokens.acquire_contract_address_tokens(repo, token_contract_address_hashes_and_ids)
-    end
-
     multi
-    |> Multi.run(:acquire_contract_address_tokens, fn repo, _ ->
-      Instrumenter.block_import_stage_runner(
-        fn -> run_func.(repo) end,
-        :block_following,
-        :current_token_balances,
-        :acquire_contract_address_tokens
-      )
-    end)
     |> Multi.run(:address_current_token_balances, fn repo, _ ->
       Instrumenter.block_import_stage_runner(
         fn -> insert(repo, changes_list, insert_options) end,
         :block_following,
         :current_token_balances,
-        :acquire_contract_address_tokens
+        :address_current_token_balances
       )
     end)
     |> Multi.run(:address_current_token_balances_update_token_holder_counts, fn repo,
@@ -156,13 +134,9 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
         end,
         :block_following,
         :current_token_balances,
-        :acquire_contract_address_tokens
+        :address_current_token_balances_update_token_holder_counts
       )
     end)
-  end
-
-  defp get_tokend_id(change) do
-    if Map.has_key?(change, :token_id), do: change.token_id, else: nil
   end
 
   @impl Import.Runner
@@ -245,7 +219,8 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
     ordered_changes_list =
       changes_list
       |> Enum.map(fn change ->
-        if Map.has_key?(change, :token_id) and Map.get(change, :token_type) == "ERC-1155" do
+        if Map.has_key?(change, :token_id) and
+             (Map.get(change, :token_type) == "ERC-1155" || Map.get(change, :token_type) == "ERC-404") do
           change
         else
           Map.put(change, :token_id, nil)
@@ -266,7 +241,9 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
       |> Enum.sort_by(&{&1.token_contract_address_hash, &1.token_id, &1.address_hash})
 
     {:ok, inserted_changes_list} =
-      if Enum.count(ordered_changes_list) > 0 do
+      if Enum.empty?(ordered_changes_list) do
+        {:ok, []}
+      else
         Import.insert_changes_list(
           repo,
           ordered_changes_list,
@@ -277,8 +254,6 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
           timeout: timeout,
           timestamps: timestamps
         )
-      else
-        {:ok, []}
       end
 
     inserted_changes_list
@@ -299,11 +274,12 @@ defmodule Explorer.Chain.Import.Runner.Address.CurrentTokenBalances do
         ]
       ],
       where:
-        fragment("? < EXCLUDED.block_number", current_token_balance.block_number) or
-          (fragment("? = EXCLUDED.block_number", current_token_balance.block_number) and
-             fragment("EXCLUDED.value IS NOT NULL") and
-             (is_nil(current_token_balance.value_fetched_at) or
-                fragment("? < EXCLUDED.value_fetched_at", current_token_balance.value_fetched_at)))
+        fragment("EXCLUDED.value_fetched_at IS NOT NULL") and
+          (fragment("? < EXCLUDED.block_number", current_token_balance.block_number) or
+             (fragment("? = EXCLUDED.block_number", current_token_balance.block_number) and
+                fragment("EXCLUDED.value IS NOT NULL") and
+                (is_nil(current_token_balance.value_fetched_at) or
+                   fragment("? < EXCLUDED.value_fetched_at", current_token_balance.value_fetched_at))))
     )
   end
 

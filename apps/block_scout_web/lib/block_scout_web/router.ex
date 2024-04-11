@@ -1,18 +1,15 @@
 defmodule BlockScoutWeb.Router do
   use BlockScoutWeb, :router
 
-  alias BlockScoutWeb.Plug.GraphQL
+  alias BlockScoutWeb.Plug.{GraphQL, RateLimit}
   alias BlockScoutWeb.{ApiRouter, WebRouter}
-
-  if Application.compile_env(:block_scout_web, ApiRouter)[:wobserver_enabled] do
-    forward("/wobserver", Wobserver.Web.Router)
-  end
 
   if Application.compile_env(:block_scout_web, :admin_panel_enabled) do
     forward("/admin", BlockScoutWeb.AdminRouter)
   end
 
   pipeline :browser do
+    plug(BlockScoutWeb.Plug.Logger, application: :block_scout_web)
     plug(:accepts, ["html"])
     plug(:fetch_session)
     plug(:fetch_flash)
@@ -21,60 +18,51 @@ defmodule BlockScoutWeb.Router do
   end
 
   pipeline :api do
+    plug(BlockScoutWeb.Plug.Logger, application: :api)
     plug(:accepts, ["json"])
+  end
+
+  pipeline :api_v1_graphql do
+    plug(BlockScoutWeb.Plug.Logger, application: :api)
+    plug(:accepts, ["json"])
+    plug(RateLimit, graphql?: true)
   end
 
   forward("/api", ApiRouter)
 
-  if Application.compile_env(:block_scout_web, ApiRouter)[:reading_enabled] do
-    # Needs to be 200 to support the schema introspection for graphiql
-    @max_complexity 200
+  scope "/graphiql" do
+    pipe_through(:api_v1_graphql)
 
-    forward("/graphql", Absinthe.Plug,
-      schema: BlockScoutWeb.Schema,
-      analyze_complexity: true,
-      max_complexity: @max_complexity
-    )
-
-    forward("/graphiql", Absinthe.Plug.GraphiQL,
-      schema: BlockScoutWeb.Schema,
-      interface: :advanced,
-      default_query: GraphQL.default_query(),
-      socket: BlockScoutWeb.UserSocket,
-      analyze_complexity: true,
-      max_complexity: @max_complexity
-    )
-  else
-    scope "/", BlockScoutWeb do
-      pipe_through(:browser)
-      get("/api-docs", PageNotFoundController, :index)
-      get("/eth-rpc-api-docs", PageNotFoundController, :index)
+    if Application.compile_env(:block_scout_web, Api.GraphQL)[:enabled] &&
+         Application.compile_env(:block_scout_web, ApiRouter)[:reading_enabled] do
+      forward("/", Absinthe.Plug.GraphiQL,
+        schema: BlockScoutWeb.GraphQL.Schema,
+        interface: :advanced,
+        default_query: GraphQL.default_query(),
+        socket: BlockScoutWeb.UserSocket
+      )
     end
   end
 
   scope "/", BlockScoutWeb do
     pipe_through(:browser)
 
-    get("/api-docs", APIDocsController, :index)
-    get("/eth-rpc-api-docs", APIDocsController, :eth_rpc)
+    get("/robots.txt", RobotsController, :robots)
+    get("/sitemap.xml", RobotsController, :sitemap)
+
+    if Application.compile_env(:block_scout_web, ApiRouter)[:reading_enabled] do
+      get("/api-docs", APIDocsController, :index)
+      get("/eth-rpc-api-docs", APIDocsController, :eth_rpc)
+    else
+      get("/api-docs", PageNotFoundController, :index)
+      get("/eth-rpc-api-docs", PageNotFoundController, :index)
+    end
   end
 
-  url_params = Application.compile_env(:block_scout_web, BlockScoutWeb.Endpoint)[:url]
-  api_path = url_params[:api_path]
-  path = url_params[:path]
+  scope "/verify_smart_contract" do
+    pipe_through(:api)
 
-  if path != api_path do
-    scope to_string(api_path) <> "/verify_smart_contract" do
-      pipe_through(:api)
-
-      post("/contract_verifications", BlockScoutWeb.AddressContractVerificationController, :create)
-    end
-  else
-    scope "/verify_smart_contract" do
-      pipe_through(:api)
-
-      post("/contract_verifications", BlockScoutWeb.AddressContractVerificationController, :create)
-    end
+    post("/contract_verifications", BlockScoutWeb.AddressContractVerificationController, :create)
   end
 
   if Application.compile_env(:block_scout_web, WebRouter)[:enabled] do

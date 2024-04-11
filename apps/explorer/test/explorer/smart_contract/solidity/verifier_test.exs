@@ -61,6 +61,15 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
   }
   """
 
+  setup do
+    configuration = Application.get_env(:explorer, Explorer.SmartContract.RustVerifierInterfaceBehaviour)
+    Application.put_env(:explorer, Explorer.SmartContract.RustVerifierInterfaceBehaviour, enabled: false)
+
+    on_exit(fn ->
+      Application.put_env(:explorer, Explorer.SmartContract.RustVerifierInterfaceBehaviour, configuration)
+    end)
+  end
+
   describe "evaluate_authenticity/2" do
     setup do
       {:ok, contract_code_info: Factory.contract_code_info()}
@@ -597,12 +606,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_10)
-      bytecode_construtor_arguments = "#{bytecode_0_5_10}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_10}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -625,12 +634,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_10)
-      bytecode_construtor_arguments = "#{bytecode_0_5_10}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_10}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -655,12 +664,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_v0_4_24_nightly_2018_4_26_commit_ef2111a2)
-      bytecode_construtor_arguments = "#{bytecode_v0_4_24_nightly_2018_4_26_commit_ef2111a2}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_v0_4_24_nightly_2018_4_26_commit_ef2111a2}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -683,12 +692,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_10_nightly_2019_6_4_commit_95e6b2e4)
-      bytecode_construtor_arguments = "#{bytecode_0_5_10_nightly_2019_6_4_commit_95e6b2e4}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_10_nightly_2019_6_4_commit_95e6b2e4}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -711,12 +720,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753)
-      bytecode_construtor_arguments = "#{bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -739,12 +748,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_14_nightly_2019_12_10_commit_45aa7a88)
-      bytecode_construtor_arguments = "#{bytecode_0_5_14_nightly_2019_12_10_commit_45aa7a88}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_14_nightly_2019_12_10_commit_45aa7a88}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -767,12 +776,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_6_1_nightly_2020_1_2_commit_d082b9b8)
-      bytecode_construtor_arguments = "#{bytecode_0_6_1_nightly_2020_1_2_commit_d082b9b8}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_6_1_nightly_2020_1_2_commit_d082b9b8}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 
@@ -795,12 +804,12 @@ defmodule Explorer.SmartContract.Solidity.VerifierTest do
 
       constructor_arguments = "000000000000000000000000000000000000000000000000000000000000000a"
       contract_address = insert(:contract_address, contract_code: bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753)
-      bytecode_construtor_arguments = "#{bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753}#{constructor_arguments}"
+      bytecode_constructor_arguments = "#{bytecode_0_5_11_nightly_2019_6_25_commit_1cc84753}#{constructor_arguments}"
 
       :transaction
       |> insert(
         created_contract_address_hash: contract_address.hash,
-        input: bytecode_construtor_arguments
+        input: bytecode_constructor_arguments
       )
       |> with_block(status: :ok)
 

@@ -1,12 +1,12 @@
 defmodule Explorer.Chain.Transaction.History.Historian do
   @moduledoc """
-  Implements behaviour Historian which will compile TransactionStats from Block/Transaction data and then save the TransactionStats into the database for later retrevial.
+  Implements behaviour Historian which will compile TransactionStats from Block/Transaction data and then save the TransactionStats into the database for later retrieval.
   """
   require Logger
   use Explorer.History.Historian
 
   alias Explorer.{Chain, Repo}
-  alias Explorer.Chain.{Block, Transaction}
+  alias Explorer.Chain.{Block, DenormalizationHelper, Transaction}
   alias Explorer.Chain.Events.Publisher
   alias Explorer.Chain.Transaction.History.TransactionStats
   alias Explorer.History.Process, as: HistoryProcess
@@ -52,29 +52,34 @@ defmodule Explorer.Chain.Transaction.History.Historian do
         compile_records(num_days - 1, records)
       else
         _ ->
+          Logger.info(
+            "tx/per day chart: timestamp cannot be converted to min/max blocks, trying to find min/max blocks through a fallback option}"
+          )
+
           min_max_block_query =
             from(block in Block,
               where: block.timestamp >= ^earliest and block.timestamp <= ^latest,
               select: {min(block.number), max(block.number)}
             )
 
-          {min_block, max_block} = Repo.one(min_max_block_query, timeout: :infinity)
+          case Repo.one(min_max_block_query, timeout: :infinity) do
+            {min_block, max_block} when not is_nil(min_block) and not is_nil(max_block) ->
+              record =
+                min_block
+                |> compile_records_in_range(max_block)
+                |> Map.put(:date, day_to_fetch)
 
-          if min_block && max_block do
-            record =
-              min_block
-              |> compile_records_in_range(max_block)
-              |> Map.put(:date, day_to_fetch)
+              records = [
+                record
+                | records
+              ]
 
-            records = [
-              record
-              | records
-            ]
+              compile_records(num_days - 1, records)
 
-            compile_records(num_days - 1, records)
-          else
-            records = [%{date: day_to_fetch, number_of_transactions: 0, gas_used: 0, total_fee: 0} | records]
-            compile_records(num_days - 1, records)
+            _ ->
+              Logger.warning("tx/per day chart: failed to get min/max blocks through a fallback option}")
+              records = [%{date: day_to_fetch, number_of_transactions: 0, gas_used: 0, total_fee: 0} | records]
+              compile_records(num_days - 1, records)
           end
       end
     end
@@ -84,10 +89,19 @@ defmodule Explorer.Chain.Transaction.History.Historian do
     Logger.info("tx/per day chart: min/max block numbers [#{min_block}, #{max_block}]")
 
     all_transactions_query =
-      from(
-        transaction in Transaction,
-        where: transaction.block_number >= ^min_block and transaction.block_number <= ^max_block
-      )
+      if DenormalizationHelper.transactions_denormalization_finished?() do
+        from(
+          transaction in Transaction,
+          where: transaction.block_number >= ^min_block and transaction.block_number <= ^max_block,
+          where: transaction.block_consensus == true,
+          select: transaction
+        )
+      else
+        from(
+          transaction in Transaction,
+          where: transaction.block_number >= ^min_block and transaction.block_number <= ^max_block
+        )
+      end
 
     all_blocks_query =
       from(
@@ -98,11 +112,15 @@ defmodule Explorer.Chain.Transaction.History.Historian do
       )
 
     query =
-      from(transaction in subquery(all_transactions_query),
-        join: block in subquery(all_blocks_query),
-        on: transaction.block_number == block.number,
-        select: transaction
-      )
+      if DenormalizationHelper.transactions_denormalization_finished?() do
+        all_transactions_query
+      else
+        from(transaction in subquery(all_transactions_query),
+          join: block in subquery(all_blocks_query),
+          on: transaction.block_number == block.number,
+          select: transaction
+        )
+      end
 
     num_transactions = Repo.aggregate(query, :count, :hash, timeout: :infinity)
     Logger.info("tx/per day chart: num of transactions #{num_transactions}")
@@ -110,12 +128,18 @@ defmodule Explorer.Chain.Transaction.History.Historian do
     Logger.info("tx/per day chart: total gas used #{gas_used}")
 
     total_fee_query =
-      from(transaction in subquery(all_transactions_query),
-        join: block in Block,
-        on: transaction.block_hash == block.hash,
-        where: block.consensus == true,
-        select: fragment("SUM(? * ?)", transaction.gas_price, transaction.gas_used)
-      )
+      if DenormalizationHelper.transactions_denormalization_finished?() do
+        from(transaction in subquery(all_transactions_query),
+          select: fragment("SUM(? * ?)", transaction.gas_price, transaction.gas_used)
+        )
+      else
+        from(transaction in subquery(all_transactions_query),
+          join: block in Block,
+          on: transaction.block_hash == block.hash,
+          where: block.consensus == true,
+          select: fragment("SUM(? * ?)", transaction.gas_price, transaction.gas_used)
+        )
+      end
 
     total_fee = Repo.one(total_fee_query, timeout: :infinity)
     Logger.info("tx/per day chart: total fee #{total_fee}")

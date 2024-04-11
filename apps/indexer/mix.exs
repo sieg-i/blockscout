@@ -14,7 +14,17 @@ defmodule Indexer.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       lockfile: "../../mix.lock",
       start_permanent: Mix.env() == :prod,
-      version: "5.1.0"
+      version: "6.4.0",
+      xref: [
+        exclude: [
+          Explorer.Chain.Optimism.Deposit,
+          Explorer.Chain.Optimism.FrameSequence,
+          Explorer.Chain.Optimism.OutputRoot,
+          Explorer.Chain.Optimism.TxnBatch,
+          Explorer.Chain.Optimism.Withdrawal,
+          Explorer.Chain.Optimism.WithdrawalEvent
+        ]
+      ]
     ]
   end
 
@@ -42,11 +52,11 @@ defmodule Indexer.MixProject do
       # JSONRPC access to Nethermind for `Explorer.Indexer`
       {:ethereum_jsonrpc, in_umbrella: true},
       # RLP encoding
-      {:ex_rlp, "~> 0.5.2"},
+      {:ex_rlp, "~> 0.6.0"},
       # Importing to database
       {:explorer, in_umbrella: true},
-      # libsecp2561k1 crypto functions
-      {:libsecp256k1, "~> 0.1.10"},
+      # ex_secp256k1 crypto functions
+      {:ex_secp256k1, "~> 0.7.0"},
       # Log errors and application output to separate files
       {:logger_file_backend, "~> 0.0.10"},
       # Mocking `EthereumJSONRPC.Transport`, so we avoid hitting real chains for local testing
@@ -55,7 +65,9 @@ defmodule Indexer.MixProject do
       # Tracing
       {:spandex, "~> 3.0"},
       # `:spandex` integration with Datadog
-      {:spandex_datadog, "~> 1.0"}
+      {:spandex_datadog, "~> 1.0"},
+      {:logger_json, "~> 5.1"},
+      {:varint, "~> 1.4"}
     ]
   end
 

@@ -1,6 +1,6 @@
 defmodule Indexer.Temporary.UncatalogedTokenTransfers do
   @moduledoc """
-  Catalogs token tranfer logs missing an accompanying token transfer record.
+  Catalogs token transfer logs missing an accompanying token transfer record.
 
   Missed token transfers happen due to formats that aren't supported at the time
   they were parsed during main indexing. Updated the parser and rebooting will allow
@@ -12,7 +12,7 @@ defmodule Indexer.Temporary.UncatalogedTokenTransfers do
 
   require Logger
 
-  alias Explorer.Chain
+  alias Explorer.Chain.TokenTransfer
   alias Indexer.Block.Catchup.Fetcher
   alias Indexer.Temporary.UncatalogedTokenTransfers
 
@@ -52,7 +52,7 @@ defmodule Indexer.Temporary.UncatalogedTokenTransfers do
   end
 
   def handle_info(:scan, state) do
-    {:ok, block_numbers} = Chain.uncataloged_token_transfer_block_numbers()
+    {:ok, block_numbers} = TokenTransfer.uncataloged_token_transfer_block_numbers()
 
     case block_numbers do
       [] ->

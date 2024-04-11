@@ -11,7 +11,7 @@ defmodule BlockScoutWeb.Mixfile do
       deps_path: "../../deps",
       description: "Web interface for BlockScout.",
       dialyzer: [
-        plt_add_deps: :transitive,
+        plt_add_deps: :app_tree,
         ignore_warnings: "../../.dialyzer-ignore"
       ],
       elixir: "~> 1.13",
@@ -23,7 +23,17 @@ defmodule BlockScoutWeb.Mixfile do
         dialyzer: :test
       ],
       start_permanent: Mix.env() == :prod,
-      version: "5.1.0"
+      version: "6.4.0",
+      xref: [
+        exclude: [
+          Explorer.Chain.PolygonZkevm.Reader,
+          Explorer.Chain.Beacon.Reader,
+          Explorer.Chain.Cache.OptimismFinalizationPeriod,
+          Explorer.Chain.Optimism.OutputRoot,
+          Explorer.Chain.Optimism.WithdrawalEvent,
+          Explorer.Chain.ZkSync.Reader
+        ]
+      ]
     ]
   end
 
@@ -59,7 +69,7 @@ defmodule BlockScoutWeb.Mixfile do
       # Integrates Absinthe subscriptions with Phoenix
       {:absinthe_phoenix, "~> 2.0.0"},
       # Plug support for Absinthe
-      {:absinthe_plug, git: "https://github.com/blockscout/absinthe_plug.git", tag: "1.5.3", override: true},
+      {:absinthe_plug, git: "https://github.com/blockscout/absinthe_plug.git", tag: "1.5.8", override: true},
       # Absinthe support for the Relay framework
       {:absinthe_relay, "~> 1.5"},
       {:bypass, "~> 2.1", only: :test},
@@ -83,9 +93,9 @@ defmodule BlockScoutWeb.Mixfile do
       # HTML CSS selectors for Phoenix controller tests
       {:floki, "~> 0.31"},
       {:flow, "~> 1.2"},
-      {:gettext, "~> 0.22.0"},
+      {:gettext, "~> 0.24.0"},
       {:hammer, "~> 6.0"},
-      {:httpoison, "~> 1.6"},
+      {:httpoison, "~> 2.0"},
       {:indexer, in_umbrella: true, runtime: false},
       # JSON parser and generator
       {:jason, "~> 1.3"},
@@ -95,7 +105,7 @@ defmodule BlockScoutWeb.Mixfile do
       {:math, "~> 0.7.0"},
       {:mock, "~> 0.3.0", only: [:test], runtime: false},
       {:number, "~> 1.0.1"},
-      {:phoenix, "== 1.5.13"},
+      {:phoenix, "== 1.5.14"},
       {:phoenix_ecto, "~> 4.1"},
       {:phoenix_html, "== 3.0.4"},
       {:phoenix_live_reload, "~> 1.2", only: [:dev]},
@@ -127,12 +137,12 @@ defmodule BlockScoutWeb.Mixfile do
       {:timex, "~> 3.7.1"},
       {:wallaby, "~> 0.30", only: :test, runtime: false},
       # `:cowboy` `~> 2.0` and Phoenix 1.4 compatibility
-      {:websocket_client, "~> 1.3"},
-      {:wobserver, "~> 0.2.0", github: "poanetwork/wobserver", branch: "support-https"},
-      {:ex_json_schema, "~> 0.9.1"},
+      {:websocket_client, git: "https://github.com/blockscout/websocket_client.git", branch: "master", override: true},
+      {:ex_json_schema, "~> 0.10.1"},
       {:ueberauth, "~> 0.7"},
       {:ueberauth_auth0, "~> 2.0"},
-      {:bureaucrat, "~> 0.2.9", only: :test}
+      {:bureaucrat, "~> 0.2.9", only: :test},
+      {:logger_json, "~> 5.1"}
     ]
   end
 

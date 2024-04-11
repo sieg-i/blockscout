@@ -13,8 +13,10 @@ defmodule Indexer.Fetcher.TransactionAction do
       from: 2
     ]
 
+  import Explorer.Helper, only: [parse_integer: 1]
+
   alias Explorer.{Chain, Repo}
-  alias Explorer.Chain.{Log, TransactionAction}
+  alias Explorer.Chain.{Block, BlockNumberHelper, Log, TransactionAction}
   alias Indexer.Transform.{Addresses, TransactionActions}
 
   @stage_first_block "tx_action_first_block"
@@ -86,8 +88,10 @@ defmodule Indexer.Fetcher.TransactionAction do
     if reason === :normal do
       {:noreply, %__MODULE__{state | task: nil}}
     else
+      logger_metadata = Logger.metadata()
       Logger.metadata(fetcher: :transaction_action)
       Logger.error(fn -> "Transaction action fetcher task exited due to #{inspect(reason)}. Rerunning..." end)
+      Logger.reset_metadata(logger_metadata)
       {:noreply, run_fetch(%__MODULE__{state | next_block: get_stage_block(@stage_next_block)})}
     end
   end
@@ -107,6 +111,7 @@ defmodule Indexer.Fetcher.TransactionAction do
            pid: pid
          } = _state
        ) do
+    logger_metadata = Logger.metadata()
     Logger.metadata(fetcher: :transaction_action)
 
     block_range = Range.new(next_block, first_block, -1)
@@ -116,6 +121,8 @@ defmodule Indexer.Fetcher.TransactionAction do
       query =
         from(
           log in Log,
+          inner_join: b in Block,
+          on: b.hash == log.block_hash and b.consensus == true,
           where: log.block_number == ^block_number,
           select: log
         )
@@ -151,7 +158,7 @@ defmodule Indexer.Fetcher.TransactionAction do
         |> Decimal.round(2)
         |> Decimal.to_string()
 
-      next_block_new = block_number - 1
+      next_block_new = BlockNumberHelper.previous_block_number(block_number)
 
       Logger.info(
         "Block #{block_number} handled successfully. Progress: #{progress_percentage}%. Initial block range: #{first_block}..#{last_block}." <>
@@ -182,24 +189,30 @@ defmodule Indexer.Fetcher.TransactionAction do
 
     Process.send(pid, :stop_server, [])
 
+    Logger.reset_metadata(logger_metadata)
+
     :ok
   end
 
   defp init_fetching(opts, first_block, last_block) do
+    logger_metadata = Logger.metadata()
     Logger.metadata(fetcher: :transaction_action)
 
     first_block = parse_integer(first_block)
     last_block = parse_integer(last_block)
 
-    cond do
-      is_nil(first_block) or is_nil(last_block) or first_block <= 0 or last_block <= 0 or first_block > last_block ->
+    return =
+      if is_nil(first_block) or is_nil(last_block) or first_block <= 0 or last_block <= 0 or first_block > last_block do
         {:stop, "Correct block range must be provided to #{__MODULE__}."}
+      else
+        max_block_number = Chain.fetch_max_block_number()
 
-      last_block > (max_block_number = Chain.fetch_max_block_number()) ->
-        {:stop,
-         "The last block number (#{last_block}) provided to #{__MODULE__} is incorrect as it exceeds max block number available in DB (#{max_block_number})."}
+        if last_block > max_block_number do
+          Logger.warning(
+            "Note, that the last block number (#{last_block}) provided to #{__MODULE__} exceeds max block number available in DB (#{max_block_number})."
+          )
+        end
 
-      true ->
         supported_protocols =
           TransactionAction.supported_protocols()
           |> Enum.map(&Atom.to_string(&1))
@@ -224,7 +237,11 @@ defmodule Indexer.Fetcher.TransactionAction do
           |> run_fetch()
 
         {:ok, state}
-    end
+      end
+
+    Logger.reset_metadata(logger_metadata)
+
+    return
   end
 
   defp get_next_block(first_block, last_block, protocols) do
@@ -273,12 +290,5 @@ defmodule Indexer.Fetcher.TransactionAction do
     |> Decimal.to_integer()
   rescue
     _e in Ecto.NoResultsError -> 0
-  end
-
-  defp parse_integer(integer_string) do
-    case Integer.parse(integer_string) do
-      {integer, ""} -> integer
-      _ -> nil
-    end
   end
 end

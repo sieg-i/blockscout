@@ -4,9 +4,9 @@ defmodule Explorer.SmartContract.Solidity.PublishHelper do
   """
 
   alias Ecto.Changeset
-  alias Explorer.Chain
+  alias Explorer.Chain.{Address, SmartContract}
   alias Explorer.Chain.Events.Publisher, as: EventsPublisher
-  alias Explorer.Chain.SmartContract
+  alias Explorer.Chain.Fetcher.LookUpSmartContractSourcesOnDemand
   alias Explorer.SmartContract.Solidity.Publisher
   alias Explorer.ThirdPartyIntegrations.Sourcify
 
@@ -88,21 +88,35 @@ defmodule Explorer.SmartContract.Solidity.PublishHelper do
     )
   end
 
-  def prepare_files_array(files) do
-    if is_map(files), do: Enum.map(files, fn {_, file} -> file end), else: []
-  end
+  def prepare_files_array(files) when is_map(files), do: Map.values(files)
+
+  def prepare_files_array(_), do: []
 
   def get_one_json(files_array) do
     files_array
-    |> Enum.filter(fn file -> file.content_type == "application/json" end)
+    |> Enum.filter(fn file ->
+      case file do
+        %Plug.Upload{content_type: content_type} ->
+          content_type == "application/json"
+
+        _ ->
+          false
+      end
+    end)
     |> Enum.at(0)
   end
 
   # sobelow_skip ["Traversal.FileModule"]
   def read_files(plug_uploads) do
-    Enum.reduce(plug_uploads, %{}, fn %Plug.Upload{path: path, filename: file_name}, acc ->
-      {:ok, file_content} = File.read(path)
-      Map.put(acc, file_name, file_content)
+    Enum.reduce(plug_uploads, %{}, fn file, acc ->
+      case file do
+        %Plug.Upload{path: path, filename: file_name} ->
+          {:ok, file_content} = File.read(path)
+          Map.put(acc, file_name, file_content)
+
+        _ ->
+          acc
+      end
     end)
   end
 
@@ -134,52 +148,79 @@ defmodule Explorer.SmartContract.Solidity.PublishHelper do
   end
 
   def check_and_verify(address_hash_string) do
-    if Chain.smart_contract_fully_verified?(address_hash_string) do
-      {:ok, :already_fully_verified}
+    if Application.get_env(:explorer, Explorer.SmartContract.RustVerifierInterfaceBehaviour)[:eth_bytecode_db?] do
+      LookUpSmartContractSourcesOnDemand.trigger_fetch(%Address{hash: address_hash_string}, nil)
     else
       if Application.get_env(:explorer, Explorer.ThirdPartyIntegrations.Sourcify)[:enabled] do
-        if Chain.smart_contract_verified?(address_hash_string) do
-          case Sourcify.check_by_address(address_hash_string) do
-            {:ok, _verified_status} ->
-              get_metadata_and_publish(address_hash_string, nil)
-
-            _ ->
-              {:error, :not_verified}
-          end
-        else
-          case Sourcify.check_by_address_any(address_hash_string) do
-            {:ok, "full", metadata} ->
-              process_metadata_and_publish(address_hash_string, metadata, false, false)
-
-            {:ok, "partial", metadata} ->
-              process_metadata_and_publish(address_hash_string, metadata, true, false)
-
-            _ ->
-              {:error, :not_verified}
-          end
-        end
+        check_by_address_in_sourcify(
+          SmartContract.select_partially_verified_by_address_hash(address_hash_string),
+          address_hash_string
+        )
       else
         {:error, :sourcify_disabled}
       end
     end
   end
 
+  def sourcify_check(address_hash_string) do
+    cond do
+      Application.get_env(:explorer, Explorer.SmartContract.RustVerifierInterfaceBehaviour)[:eth_bytecode_db?] ->
+        {:error, :eth_bytecode_db_enabled}
+
+      Application.get_env(:explorer, Explorer.ThirdPartyIntegrations.Sourcify)[:enabled] ->
+        check_by_address_in_sourcify(
+          SmartContract.select_partially_verified_by_address_hash(address_hash_string),
+          address_hash_string
+        )
+
+      true ->
+        {:error, :sourcify_disabled}
+    end
+  end
+
+  defp check_by_address_in_sourcify(false, _address_hash_string) do
+    {:ok, :already_fully_verified}
+  end
+
+  defp check_by_address_in_sourcify(true, address_hash_string) do
+    case Sourcify.check_by_address(address_hash_string) do
+      {:ok, _verified_status} ->
+        get_metadata_and_publish(address_hash_string, nil)
+
+      _ ->
+        {:error, :not_verified}
+    end
+  end
+
+  defp check_by_address_in_sourcify(nil, address_hash_string) do
+    case Sourcify.check_by_address_any(address_hash_string) do
+      {:ok, "full", metadata} ->
+        process_metadata_and_publish(address_hash_string, metadata, false, false)
+
+      {:ok, "partial", metadata} ->
+        process_metadata_and_publish(address_hash_string, metadata, true, false)
+
+      _ ->
+        {:error, :not_verified}
+    end
+  end
+
   def publish_without_broadcast(
         %{"addressHash" => address_hash, "abi" => abi, "compilationTargetFilePath" => file_path} = input
       ) do
-    params = proccess_params(input)
+    params = process_params(input)
 
     address_hash
     |> Publisher.publish_smart_contract(params, abi, file_path)
-    |> proccess_response()
+    |> process_response()
   end
 
   def publish_without_broadcast(%{"addressHash" => address_hash, "abi" => abi} = input) do
-    params = proccess_params(input)
+    params = process_params(input)
 
     address_hash
     |> Publisher.publish_smart_contract(params, abi)
-    |> proccess_response()
+    |> process_response()
   end
 
   def publish(nil, %{"addressHash" => _address_hash} = input, _) do
@@ -196,7 +237,7 @@ defmodule Explorer.SmartContract.Solidity.PublishHelper do
     end
   end
 
-  def proccess_params(input) do
+  def process_params(input) do
     if Map.has_key?(input, "secondarySources") do
       input["params"]
       |> Map.put("secondary_sources", Map.get(input, "secondarySources"))
@@ -205,7 +246,7 @@ defmodule Explorer.SmartContract.Solidity.PublishHelper do
     end
   end
 
-  def proccess_response(response) do
+  def process_response(response) do
     case response do
       {:ok, _contract} = result ->
         result

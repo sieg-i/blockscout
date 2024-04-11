@@ -102,6 +102,35 @@ defmodule Explorer.SmartContract.ReaderTest do
 
       assert %{"6d4ce63c" => {:error, "no function clause matches"}} = response
     end
+
+    test "with function ABI that is missing the outputs field" do
+      smart_contract =
+        build(:smart_contract,
+          abi: [
+            %{
+              "type" => "function",
+              "stateMutability" => "view",
+              "name" => "assumeLastTokenIdMatches",
+              "inputs" => [
+                %{
+                  "type" => "uint256",
+                  "name" => "lastTokenId",
+                  "internalType" => "uint256"
+                }
+              ]
+            }
+          ]
+        )
+
+      contract_address_hash = Hash.to_string(smart_contract.address_hash)
+      abi = smart_contract.abi
+
+      blockchain_get_function_mock()
+
+      response = Reader.query_contract(contract_address_hash, abi, %{"e72878b4" => [123]}, false)
+
+      assert response == %{"e72878b4" => {:ok, []}}
+    end
   end
 
   describe "query_verified_contract/3" do
@@ -118,7 +147,7 @@ defmodule Explorer.SmartContract.ReaderTest do
   end
 
   describe "read_only_functions/1" do
-    test "fetches the smart contract read only functions with the blockchain value" do
+    test "fetches the smart contract read only functions with the blockchain value with provided smart_contract" do
       smart_contract =
         insert(
           :smart_contract,
@@ -146,14 +175,14 @@ defmodule Explorer.SmartContract.ReaderTest do
 
       blockchain_get_function_mock()
 
-      response = Reader.read_only_functions(smart_contract.address_hash)
+      response = Reader.read_only_functions(smart_contract, smart_contract.address_hash, nil)
 
       assert [
                %{
                  "constant" => true,
                  "inputs" => [],
                  "name" => "get",
-                 "outputs" => [%{"name" => "", "type" => "uint256", "value" => 0}],
+                 "outputs" => [%{"type" => "uint256", "value" => 0}],
                  "payable" => _,
                  "stateMutability" => _,
                  "type" => _
@@ -162,7 +191,7 @@ defmodule Explorer.SmartContract.ReaderTest do
                  "constant" => true,
                  "inputs" => [%{"name" => "x", "type" => "uint256"}],
                  "name" => "with_arguments",
-                 "outputs" => [%{"name" => "", "type" => "bool"}],
+                 "outputs" => [%{"type" => "bool"}],
                  "payable" => _,
                  "stateMutability" => _,
                  "type" => _
@@ -229,7 +258,8 @@ defmodule Explorer.SmartContract.ReaderTest do
       response =
         Reader.read_only_functions_proxy(
           proxy_smart_contract.address_hash,
-          "0x" <> implementation_contract_address_hash_string
+          "0x" <> implementation_contract_address_hash_string,
+          nil
         )
 
       assert [
@@ -237,7 +267,7 @@ defmodule Explorer.SmartContract.ReaderTest do
                  "constant" => true,
                  "inputs" => [],
                  "name" => "get",
-                 "outputs" => [%{"name" => "", "type" => "uint256", "value" => 0}],
+                 "outputs" => [%{"type" => "uint256", "value" => 0}],
                  "payable" => _,
                  "stateMutability" => _,
                  "type" => _
@@ -246,7 +276,7 @@ defmodule Explorer.SmartContract.ReaderTest do
                  "constant" => true,
                  "inputs" => [%{"name" => "x", "type" => "uint256"}],
                  "name" => "with_arguments",
-                 "outputs" => [%{"name" => "", "type" => "bool"}],
+                 "outputs" => [%{"type" => "bool"}],
                  "payable" => _,
                  "stateMutability" => _,
                  "type" => _
@@ -260,18 +290,6 @@ defmodule Explorer.SmartContract.ReaderTest do
       smart_contract = insert(:smart_contract, contract_code_md5: "123")
 
       blockchain_get_function_mock()
-
-      assert [
-               %{
-                 "type" => "uint256",
-                 "value" => 0
-               }
-             ] = Reader.query_function(smart_contract.address_hash, %{method_id: "6d4ce63c", args: []}, :regular, false)
-    end
-
-    test "nil arguments is treated as []" do
-      smart_contract = insert(:smart_contract, contract_code_md5: "123")
-
       blockchain_get_function_mock()
 
       assert [
@@ -280,7 +298,62 @@ defmodule Explorer.SmartContract.ReaderTest do
                  "value" => 0
                }
              ] =
-               Reader.query_function(smart_contract.address_hash, %{method_id: "6d4ce63c", args: nil}, :regular, false)
+               Reader.query_function(
+                 smart_contract.address_hash,
+                 %{method_id: "6d4ce63c", args: []},
+                 :regular,
+                 nil,
+                 false
+               )
+
+      assert [
+               %{
+                 "type" => "uint256",
+                 "value" => 0
+               }
+             ] =
+               Reader.query_function_with_custom_abi(
+                 smart_contract.address_hash,
+                 %{method_id: "6d4ce63c", args: []},
+                 nil,
+                 false,
+                 smart_contract.abi
+               )
+    end
+
+    test "nil arguments is treated as []" do
+      smart_contract = insert(:smart_contract, contract_code_md5: "123")
+
+      blockchain_get_function_mock()
+      blockchain_get_function_mock()
+
+      assert [
+               %{
+                 "type" => "uint256",
+                 "value" => 0
+               }
+             ] =
+               Reader.query_function(
+                 smart_contract.address_hash,
+                 %{method_id: "6d4ce63c", args: nil},
+                 :regular,
+                 nil,
+                 false
+               )
+
+      assert [
+               %{
+                 "type" => "uint256",
+                 "value" => 0
+               }
+             ] =
+               Reader.query_function_with_custom_abi(
+                 smart_contract.address_hash,
+                 %{method_id: "6d4ce63c", args: []},
+                 nil,
+                 false,
+                 smart_contract.abi
+               )
     end
   end
 

@@ -178,7 +178,6 @@ defmodule Explorer.Token.MetadataRetriever do
       token_to_update =
         Token
         |> Repo.get_by(contract_address_hash: contract_address_hash)
-        |> Repo.preload([:contract_address])
 
       set_skip_metadata(token_to_update)
     end
@@ -187,7 +186,7 @@ defmodule Explorer.Token.MetadataRetriever do
   end
 
   def set_skip_metadata(token_to_update) do
-    Chain.update_token(%{token_to_update | updated_at: DateTime.utc_now()}, %{skip_metadata: true})
+    Chain.update_token(token_to_update, %{skip_metadata: true})
   end
 
   def get_total_supply_of(contract_address_hash) when is_binary(contract_address_hash) do

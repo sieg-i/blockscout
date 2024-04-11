@@ -108,7 +108,10 @@ const appJs =
                 esModule: false,
               },
             }, {
-              loader: 'css-loader'
+              loader: 'css-loader',
+              options: {
+                esModule: false,
+              },
             }, {
               loader: 'postcss-loader'
             }, {
@@ -166,8 +169,6 @@ const appJs =
       ),
       new ContextReplacementPlugin(/moment[\/\\]locale$/, /en/),
       new webpack.DefinePlugin({
-        'process.env.SOCKET_ROOT': JSON.stringify(process.env.SOCKET_ROOT),
-        'process.env.NETWORK_PATH': JSON.stringify(process.env.NETWORK_PATH),
         'process.env.MIXPANEL_TOKEN': JSON.stringify(process.env.MIXPANEL_TOKEN),
         'process.env.MIXPANEL_URL': JSON.stringify(process.env.MIXPANEL_URL),
         'process.env.AMPLITUDE_API_KEY': JSON.stringify(process.env.AMPLITUDE_API_KEY),
